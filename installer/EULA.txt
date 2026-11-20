@@ -1,0 +1,72 @@
+﻿符卡作业簿 · 最终用户许可协议
+SpellCardHomework End User License Agreement
+==================================================
+
+一、软件性质
+1. 本软件是东方 Project 的非商业同人作品，仅供个人学习与交流使用。
+2. 本软件与 ZUN / 上海爱丽丝幻乐团没有隶属关系，也未获得官方认可。
+3. 界面中的角色立绘、启动图、横幅和图标为 AI 生成的二次创作；
+   东方 Project 角色版权归 ZUN / 上海爱丽丝幻乐团所有。
+4. 程序代码以 MIT 协议开源；图片素材不在 MIT 授权范围内，请勿商用。
+
+二、授权与使用限制
+1. 本软件采用“一机一码”，激活码只对申请时提交的机器有效。
+2. 禁止转售、出租、破解或修改授权逻辑，也禁止把激活码
+   分享给他人或用于其他机器。
+3. 卸载本软件会清除本机的授权与试用记录（保留设置与 API Key）。
+
+三、数据与隐私
+1. API Key 使用 Windows DPAPI 加密后保存在本机。
+2. 用量记录（模型、tokens、耗时、费用估算）仅保存在本机。
+3. 本软件不会把上述数据上传到作者服务器。
+
+四、免责声明
+1. 本软件按“现状”提供，不附带任何明示或暗示的担保。
+2. 使用本软件应遵守所在学校、考试平台及当地法律法规；
+   因使用本软件产生的任何后果由使用者自行承担。
+3. 作者不对因使用或无法使用本软件造成的任何损失负责。
+
+五、其他
+1. 继续安装即表示您已阅读并同意本协议。
+2. 如不同意，请点击“我不接受”，安装将退出。
+
+联系方式：
+  Shinichi  1651452812@qq.com
+  Fastrof   3530209532@qq.com
+
+==================================================
+
+1. Nature of the software
+   This is a non-commercial Touhou Project fan work for personal study
+   and communication. It is not affiliated with, or endorsed by,
+   ZUN / Team Shanghai Alice.
+   Character art, splash, banner and icon are AI-generated fan art;
+   Touhou Project characters are (c) ZUN / Team Shanghai Alice.
+   The source code is MIT-licensed; the artwork is NOT - do not use it
+   commercially.
+
+2. Licensing
+   One machine, one activation code. Codes are bound to the machine they
+   were issued for. Reselling, renting, cracking or modifying the license
+   logic is prohibited, as is sharing codes with other people or machines.
+   Uninstalling removes the local license and trial records
+   (settings and API key are kept).
+
+3. Data and privacy
+   API keys are encrypted locally with Windows DPAPI.
+   Usage records (model, tokens, duration, estimated cost) stay on this
+   machine. Nothing is uploaded to the authors' servers.
+
+4. Disclaimer
+   This software is provided "as is", without any express or implied
+   warranty. You are responsible for complying with your school's rules,
+   the platform's terms of service and local laws. The authors are not
+   liable for any consequences or damages arising from the use of this
+   software.
+
+5. Continuing the installation means you accept these terms.
+   If you do not agree, click "I do not accept" to exit the installer.
+
+Contact:
+  Shinichi  1651452812@qq.com
+  Fastrof   3530209532@qq.com

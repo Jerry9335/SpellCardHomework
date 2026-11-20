@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# 构建产物
+build/
+dist/
+*.spec
+installer/Output/
+installer/msix/build/
+
+# 本地测试与临时文件
+tools/_*
+tools/shots/
+tools/.test_config/
+tools/_t.log
+*.log
+
+# 配置与授权（绝不能上传）
+license.json
+license_private.key
+config.json
+.env
+
+# 编辑器
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# 授权私钥与备份（绝不能上传）
+license_private.key
+backup_license_*/
+backup_appdata_*/
+assets_candidates/
+发码工具.pyw
+Pictures/
+符卡作业簿.exe
+
+# 大压缩包/备份
+*.7z
+*.zip
+Exercise-Tools.7z
