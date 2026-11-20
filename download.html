@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <script>document.documentElement.classList.add("js");</script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>下载 · 符卡作业簿</title>
+  <meta name="description" content="下载符卡作业簿 v1.0.1：Windows 安装包，含校验和、系统要求与授权说明。" />
+  <link rel="icon" href="assets/img/favicon.png" />
+  <link rel="stylesheet" href="assets/css/style.css" />
+</head>
+<body>
+  <canvas id="petals" aria-hidden="true"></canvas>
+
+  <header class="site-header">
+    <div class="container nav">
+      <a class="brand" href="index.html">
+        <span class="torii" aria-hidden="true">⛩</span>
+        <span><b>符卡作业簿</b><small>～ 幻想郷 · 宿題退治 ～</small></span>
+      </a>
+      <button class="nav-toggle" aria-label="打开菜单" aria-expanded="false">☰</button>
+      <nav class="nav-links" aria-label="主导航">
+        <a href="index.html">首页</a>
+        <a href="features.html">功能</a>
+        <a href="download.html">下载</a>
+        <a href="download.html#activate">授权</a>
+        <a class="nav-cta" href="download.html">前往下载</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section class="download-hero">
+      <div class="container">
+        <h1>下载</h1>
+        <p>版本 v1.0.1 · 2026-11-20 · Windows 10 / 11 (x64)</p>
+      </div>
+    </section>
+
+    <section class="section" style="padding-top:10px">
+      <div class="container">
+        <div class="dl-grid">
+          <article class="dl-card reveal">
+            <h3>安装包 · Setup</h3>
+            <div class="meta">SpellCardHomework-Setup-1.0.1.exe · 约 30.5 MB</div>
+            <div class="hash">SHA256 414C4A020436BFC43C11B37FAFA1D7C69CBBBB322BA199C9AF11D0D8783DA434
+              <div style="margin-top:8px">
+                <button class="copy-btn" data-copy="414C4A020436BFC43C11B37FAFA1D7C69CBBBB322BA199C9AF11D0D8783DA434">复制校验和</button>
+              </div>
+            </div>
+            <div class="actions">
+              <a class="btn btn-primary" href="https://github.com/Jerry9335/SpellCardHomework/releases/download/v1.0.1/SpellCardHomework-Setup-1.0.1.exe">下载安装包</a>
+              <a class="btn btn-ghost" href="https://github.com/Jerry9335/SpellCardHomework/releases/latest" target="_blank" rel="noopener">发布页</a>
+            </div>
+          </article>
+        </div>
+
+        <div class="notice reveal">
+          安装包会先显示《最终用户许可协议》，需要选择「我同意」才能继续；
+          <b>卸载会清除本机的授权与试用记录</b>（设置与 API Key 会保留），重装后需要重新试用或激活。
+        </div>
+      </div>
+    </section>
+
+    <section class="section tight">
+      <div class="container">
+        <div class="section-head reveal">
+          <span class="seal">式</span>
+          <h2>安装与首次启动</h2>
+          <p class="sub">四步进入结界</p>
+        </div>
+        <div class="grid grid-2">
+          <div class="spell-card reveal" data-seal="一" style="padding:12px 26px 22px">
+            <ol class="steps">
+              <li><b>运行安装包</b><br />双击 Setup，选择「仅为我安装」即可，不需要管理员权限。</li>
+              <li><b>同意许可协议</b><br />阅读后选「我同意此协议」，下一步继续。</li>
+              <li><b>首次启动</b><br />会先弹出「博麗神社 · 结界许可」。</li>
+            </ol>
+          </div>
+          <div class="spell-card reveal" data-seal="二" style="padding:12px 26px 22px">
+            <ol class="steps" start="4" style="counter-reset: step 3">
+              <li><b>试用或激活</b><br />点「先试用 5 天」直接进入；或复制本机灵符申请激活码。</li>
+              <li><b>填写接口</b><br />在设置里填 Base URL 与通行密钥（API Key），点「刷新」拉模型列表。</li>
+              <li><b>开始退治</b><br />按 F8 截屏识别，或打开浏览器用「张开结界 + 开始退治」。</li>
+            </ol>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section tight" id="activate">
+      <div class="container">
+        <div class="section-head reveal">
+          <span class="seal">許</span>
+          <h2>授权与试用</h2>
+          <p class="sub">一机一码 · 首次可试用 5 天</p>
+        </div>
+        <div class="grid grid-2">
+          <div class="spell-card reveal" data-seal="灵">
+            <h3>怎么拿激活码</h3>
+            <p>首次启动的授权窗口里，金色大字就是「本机灵符」（机器码），点旁边的「收下灵符」即可复制。</p>
+            <p>把机器码发邮件给下面任意一位，收到「许可咒文」（激活码）后粘贴、点「解开结界」。</p>
+            <p style="margin-top:14px">
+              <a class="btn btn-ghost" href="mailto:1651452812@qq.com">博麗灵梦 · Shinichi</a>
+              <button class="copy-btn" data-copy="1651452812@qq.com">复制邮箱</button>
+            </p>
+            <p>
+              <a class="btn btn-ghost" href="mailto:3530209532@qq.com">八云紫 · Fastrof</a>
+              <button class="copy-btn" data-copy="3530209532@qq.com">复制邮箱</button>
+            </p>
+          </div>
+          <div class="spell-card reveal" data-seal="紫">
+            <h3>试用与到期</h3>
+            <p>第一次点「先试用 5 天」才开始计时，五天到期后必须激活才能进入主界面。</p>
+            <ul style="color:var(--muted);font-size:14px;padding-left:20px">
+              <li>激活码绑定机器码，换电脑或重装系统需要重新申请</li>
+              <li>卸载会清除授权记录</li>
+              <li>1.0.1 之前的旧短码已作废</li>
+              <li>把系统时间往回调会被判为异常，试用直接作废</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section tight">
+      <div class="container">
+        <div class="section-head reveal">
+          <span class="seal">要</span>
+          <h2>系统要求</h2>
+        </div>
+        <div class="grid grid-3">
+          <article class="spell-card reveal" data-seal="一">
+            <h3>系统</h3>
+            <p>Windows 10 / 11（x64）。安装包自带运行环境，不需要安装 Python。</p>
+          </article>
+          <article class="spell-card reveal" data-seal="二">
+            <h3>接口</h3>
+            <p>任意 OpenAI 兼容接口：DeepSeek / OpenAI / 智谱 / 通义 / OpenRouter / 本地 Ollama。</p>
+          </article>
+          <article class="spell-card reveal" data-seal="三">
+            <h3>浏览器</h3>
+            <p>全自动网页答题需要 Edge 或 Chrome，推荐 Edge。</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section tight">
+      <div class="container">
+        <div class="section-head reveal">
+          <span class="seal">問</span>
+          <h2>常见问题</h2>
+        </div>
+        <div class="reveal">
+          <details class="faq">
+            <summary>Windows 提示「已保护你的电脑」怎么办？</summary>
+            <p>安装包没有购买代码签名证书，SmartScreen 会提示。点「更多信息 → 仍要运行」即可。校验和可以在上方复制核对。</p>
+          </details>
+          <details class="faq">
+            <summary>重装后为什么还是已激活？</summary>
+            <p>1.0.1 起卸载会自动清除授权与试用记录。如果是旧版本卸载的，旧卸载程序不会清，需要手动删除 <code>%APPDATA%\SpellCardHomework\license.json</code>、<code>trial.json</code>、<code>%LOCALAPPDATA%\SpellCardHomework\.spellcard_trial</code> 和注册表里的 <code>HKCU\Software\Shinichi\SpellCardHomework</code>。</p>
+          </details>
+          <details class="faq">
+            <summary>首次启动直接进了主界面？</summary>
+            <p>先确认「关于程序」里版本是 v1.0.1，再看 <code>%APPDATA%\SpellCardHomework\boot.log</code> 里的 <code>access=</code> 记录，能看出它读到了什么授权状态。</p>
+          </details>
+          <details class="faq">
+            <summary>换电脑了怎么办？</summary>
+            <p>机器码会变，需要把新的「本机灵符」发邮件重新申请激活码。旧码只对旧机器有效。</p>
+          </details>
+          <details class="faq">
+            <summary>会自动上传我的数据吗？</summary>
+            <p>不会。API Key 用 Windows DPAPI 加密保存在本机，用量记录也只写在本机文件里，不会上传到作者服务器。</p>
+          </details>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="container" style="text-align:center">
+        <a class="btn btn-primary reveal" href="https://github.com/Jerry9335/SpellCardHomework" target="_blank" rel="noopener">前往 GitHub 仓库</a>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-grid">
+        <div>
+          <h4>符卡作业簿</h4>
+          <p>～ 抽符 · 退治 · 收卡 ～</p>
+          <p>东方 Project 风格的非商业同人工具，仅供个人学习与交流使用。</p>
+        </div>
+        <div>
+          <h4>导航</h4>
+          <a href="index.html">首页</a>
+          <a href="features.html">功能介绍</a>
+          <a href="download.html">下载</a>
+          <a href="download.html#activate">授权与试用</a>
+        </div>
+        <div>
+          <h4>联系</h4>
+          <a href="mailto:1651452812@qq.com">Shinichi · 1651452812@qq.com</a>
+          <a href="mailto:3530209532@qq.com">Fastrof · 3530209532@qq.com</a>
+          <a href="https://github.com/Jerry9335/SpellCardHomework" target="_blank" rel="noopener">GitHub 仓库</a>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <span>© <span data-year>2026</span> Shinichi &amp; Fastrof · 代码 MIT 协议</span>
+        <span>东方 Project 角色版权归 ZUN / 上海爱丽丝幻乐团所有，本项目为非商业二次创作。</span>
+      </div>
+    </div>
+  </footer>
+
+  <script src="assets/js/main.js"></script>
+</body>
+</html>
