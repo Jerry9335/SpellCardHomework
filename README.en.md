@@ -27,13 +27,13 @@ A small Windows desktop tool: **screenshot → OCR → translate → AI answer �
 
 ## Screenshots
 
-| Usage ledger | Settings |
-| --- | --- |
-| ![Ledger](docs/usage.png) | ![Settings](docs/settings.png) |
-
 | Splash | Activation |
 | --- | --- |
 | ![Splash](docs/splash.png) | ![Activation](docs/activation_firstrun.png) |
+
+| Usage ledger | Settings |
+| --- | --- |
+| ![Ledger](docs/usage.png) | ![Settings](docs/settings.png) |
 
 ## Requirements
 
