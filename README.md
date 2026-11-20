@@ -2,6 +2,19 @@
 
 > ～ 抽符 · 退治 · 收卡 ～
 
+<p align="center">
+  <a href="https://github.com/Jerry9335/SpellCardHomework"><img src="https://img.shields.io/badge/github-12100E.svg?&amp;logo=github&amp;logoColor=white" alt="GitHub" /></a>
+  <img src="https://img.shields.io/badge/windows-0078D6?logo=windows&amp;logoColor=white" alt="Windows 10 / 11" />
+  <img src="https://img.shields.io/badge/Python-14354C.svg?logo=python&amp;logoColor=white" alt="Python 3.10+" />
+  <img src="https://img.shields.io/badge/License-MIT-e8c46a.svg" alt="MIT License" />
+  <img src="https://img.shields.io/badge/version-1.0.1-c8323c.svg" alt="v1.0.1" />
+  <img src="https://img.shields.io/badge/Touhou-Project%20Fan%20Work-c8323c.svg" alt="Touhou Project fan work" />
+  <img src="https://img.shields.io/badge/QQ-EB1923?logo=tencent-qq&amp;logoColor=white" alt="QQ" />
+  <img src="https://img.shields.io/badge/Gmail-D14836?logo=gmail&amp;logoColor=white" alt="Gmail" />
+  <br />
+  <img src="https://count.getloli.com/@SpellCardHomework?theme=booru-lewd&amp;padding=7&amp;offset=0&amp;align=top&amp;scale=1&amp;pixelated=1&amp;darkmode=auto" alt="访问计数 / visitor counter" />
+</p>
+
 Windows 桌面小工具：**截屏识题 → 英文翻译 → AI 作答 → 全自动网页答题**。
 
 [English](./README.en.md) · [打包说明](./installer/README.md) · [发码流程](./docs/author_licensing.md)
@@ -181,3 +194,13 @@ v1.0.1 的激活码约 130 字符，整段复制粘贴即可。
 
 - **Shinichi**（主开发）— 程序主体 / 截屏识别 / 全自动化 · 1651452812@qq.com
 - **Fastrof**（副开发）— 界面美术 / 测试 / 素材整理 · 3530209532@qq.com
+
+## Star History
+
+<a href="https://www.star-history.com/?repos=jerry9335%2Fspellcardhomework&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=jerry9335/spellcardhomework&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=jerry9335/spellcardhomework&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=jerry9335/spellcardhomework&type=date&legend=top-left" />
+ </picture>
+</a>
