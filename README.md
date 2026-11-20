@@ -62,7 +62,6 @@ Windows 桌面小工具：**截屏识题 → 英文翻译 → AI 作答 → 全�
 | 文件 | 说明 |
 | --- | --- |
 | `SpellCardHomework-Setup-1.0.1.exe` | 常规安装包（Inno Setup） |
-| `SpellCardHomework.msix` | 微软商店 / 侧载用（本地侧载需签名） |
 
 > 安装时会显示《最终用户许可协议》，需选择「我同意」才能继续；静默安装（`/VERYSILENT`）会自动跳过该页。
 >
@@ -133,7 +132,7 @@ python -m PyInstaller --noconfirm --clean --windowed --name "SpellCardHomework" 
 :: 2. exe 安装包（Inno Setup 7）
 "D:\Program Files\Inno Setup 7\ISCC.exe" installer\SpellCardHomework.iss
 
-:: 3. MSIX
+:: 3. MSIX（可选，本地构建，不随 Release 发布）
 powershell -ExecutionPolicy Bypass -File installer\build_msix.ps1
 ```
 

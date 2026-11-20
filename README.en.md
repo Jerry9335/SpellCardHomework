@@ -62,7 +62,6 @@ Download from [Releases](../../releases):
 | File | Description |
 | --- | --- |
 | `SpellCardHomework-Setup-1.0.1.exe` | Standard installer (Inno Setup) |
-| `SpellCardHomework.msix` | MSIX package (sideloading requires signing) |
 
 > The installer shows the End User License Agreement; you must accept it to continue (silent installs with `/VERYSILENT` skip this page).
 >
@@ -133,7 +132,7 @@ python -m PyInstaller --noconfirm --clean --windowed --name "SpellCardHomework" 
 :: 2. Installer (Inno Setup 7)
 "D:\Program Files\Inno Setup 7\ISCC.exe" installer\SpellCardHomework.iss
 
-:: 3. MSIX
+:: 3. MSIX (optional, local build only, not published with releases)
 powershell -ExecutionPolicy Bypass -File installer\build_msix.ps1
 ```
 

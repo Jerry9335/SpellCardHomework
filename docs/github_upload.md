@@ -136,7 +136,6 @@ git push -u origin main
 2. Tag：`v1.0.1`，标题：`SpellCardHomework 1.0.1`
 3. 上传：
    - `installer/Output/SpellCardHomework-Setup-1.0.1.exe`
-   - `installer/Output/SpellCardHomework.msix`
 4. 发布说明可以写：
 
 ```
