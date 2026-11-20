@@ -52,12 +52,6 @@ Download from [Releases](../../releases):
 | --- | --- |
 | `SpellCardHomework-Setup-1.0.1.exe` | Standard installer (Inno Setup) |
 
-> The installer shows the End User License Agreement; you must accept it to continue (silent installs with `/VERYSILENT` skip this page).
->
-> Uninstalling clears the local license records (settings and API key are kept); after reinstalling you need to start a trial or activate again.
-
-![License agreement](docs/installer_eula.png)
-
 ### Option 2: Run from source
 
 ```bash
