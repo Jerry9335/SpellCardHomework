@@ -27,13 +27,13 @@ Windows 桌面小工具：**截屏识题 → 英文翻译 → AI 作答 → 全�
 
 ## 截图
 
-| 香火钱账本（用量） | 设置 |
-| --- | --- |
-| ![账本](docs/usage.png) | ![设置](docs/settings.png) |
-
 | 启动画面 | 结界许可（激活） |
 | --- | --- |
 | ![启动](docs/splash.png) | ![激活](docs/activation_firstrun.png) |
+
+| 香火钱账本（用量） | 设置 |
+| --- | --- |
+| ![账本](docs/usage.png) | ![设置](docs/settings.png) |
 
 ## 系统要求
 
