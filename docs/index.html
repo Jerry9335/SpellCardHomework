@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <script>document.documentElement.classList.add("js");</script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>符卡作业簿 · SpellCardHomework</title>
+  <meta name="description" content="东方 Project 风格的 Windows 截屏识题 + AI 作答 + 全自动网页答题工具。" />
+  <link rel="icon" href="assets/img/favicon.png" />
+  <link rel="stylesheet" href="assets/css/style.css" />
+</head>
+<body>
+  <canvas id="petals" aria-hidden="true"></canvas>
+
+  <header class="site-header">
+    <div class="container nav">
+      <a class="brand" href="index.html">
+        <span class="torii" aria-hidden="true">⛩</span>
+        <span><b>符卡作业簿</b><small>～ 幻想郷 · 宿題退治 ～</small></span>
+      </a>
+      <button class="nav-toggle" aria-label="打开菜单" aria-expanded="false">☰</button>
+      <nav class="nav-links" aria-label="主导航">
+        <a href="index.html">首页</a>
+        <a href="features.html">功能</a>
+        <a href="download.html">下载</a>
+        <a href="download.html#activate">授权</a>
+        <a class="nav-cta" href="download.html">前往下载</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <!-- Hero -->
+    <section class="hero">
+      <div class="hero-bg" aria-hidden="true"></div>
+      <div class="container">
+        <div class="hero-inner">
+          <span class="hero-kicker">TOUHOU PROJECT FAN WORK · v1.0.1</span>
+          <h1>符卡作业簿</h1>
+          <div class="jp">～ 抽符 · 退治 · 收卡 ～</div>
+          <p class="lead">
+            截下屏幕上的题目，交给博麗神社的式神们：灵梦替你读题，慧音替你翻译，
+            魔理沙替你作答。英文题、公式、网页作业，一并退治。
+          </p>
+          <div class="hero-actions">
+            <a class="btn btn-primary" href="download.html">⛩ 前往下载</a>
+            <a class="btn btn-ghost" href="features.html">查看功能</a>
+          </div>
+          <div class="hero-meta">
+            <span>版本 <b>v1.0.1</b></span>
+            <span>平台 <b>Windows 10 / 11</b></span>
+            <span>授权 <b>一机一码</b></span>
+            <span>协议 <b>MIT</b></span>
+          </div>
+        </div>
+      </div>
+      <svg class="torii-silhouette" viewBox="0 0 600 200" aria-hidden="true">
+        <g fill="#e5484d">
+          <rect x="52" y="26" width="496" height="18" rx="6" />
+          <rect x="30" y="58" width="540" height="12" rx="5" />
+          <rect x="118" y="46" width="22" height="150" />
+          <rect x="460" y="46" width="22" height="150" />
+          <rect x="270" y="70" width="60" height="110" />
+          <rect x="150" y="120" width="300" height="10" rx="4" />
+        </g>
+      </svg>
+    </section>
+
+    <!-- 三道境界 -->
+    <section class="section">
+      <div class="container">
+        <div class="section-head reveal">
+          <span class="seal">符</span>
+          <h2>三道境界</h2>
+          <p class="sub">抽符 · 退治 · 收卡 —— 一道符，三道手续</p>
+        </div>
+        <div class="grid grid-3">
+          <article class="spell-card reveal" data-seal="抽">
+            <div class="icon"><img class="avatar" src="assets/img/marisa.png" alt="魔理沙" /></div>
+            <h3>抽符 · 识题</h3>
+            <p>按 F8 截下题目，魔理沙会把文字、公式、选项一起抄进摘录。英文题自动交给慧音翻译。</p>
+          </article>
+          <article class="spell-card reveal" data-seal="退">
+            <div class="icon"><img class="avatar" src="assets/img/reimu.png" alt="灵梦" /></div>
+            <h3>退治 · 作答</h3>
+            <p>灵梦带着你的模型出场：选择题、填空题、下拉框、多小问，逐题给出答案。</p>
+          </article>
+          <article class="spell-card reveal" data-seal="收">
+            <div class="icon"><img class="avatar" src="assets/img/yukari.png" alt="紫" /></div>
+            <h3>收卡 · 收尾</h3>
+            <p>答案收进灵梦的答案栏，一键誊抄；网页作业还能自动填、自动交、自动翻页。</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- 符卡一览 -->
+    <section class="section tight">
+      <div class="container">
+        <div class="section-head reveal">
+          <span class="seal">札</span>
+          <h2>符卡一览</h2>
+          <p class="sub">六张常用符卡，覆盖从识题到交卷的全流程</p>
+        </div>
+        <div class="grid grid-3">
+          <article class="spell-card reveal" data-seal="一">
+            <h3>截屏识别</h3>
+            <p>全屏、窗口、框选三种抽符方式，本地 OCR 与视觉模型双保险。</p>
+          </article>
+          <article class="spell-card reveal" data-seal="二">
+            <h3>公式渲染</h3>
+            <p>LaTeX 自动转成 √、x²、≤、∑、矩阵等可读符号，不再看天书。</p>
+          </article>
+          <article class="spell-card reveal" data-seal="三">
+            <h3>英文翻译</h3>
+            <p>识别到英文题目时，慧音会先译成中文，再交给式神作答。</p>
+          </article>
+          <article class="spell-card reveal" data-seal="四">
+            <h3>全自动网页答题</h3>
+            <p>CDP 接管 Edge / Chrome，单选、多选、填空、下拉、多小问全都能填。</p>
+          </article>
+          <article class="spell-card reveal" data-seal="五">
+            <h3>香火钱账本</h3>
+            <p>每次调用的 tokens、耗时、费用估算都记在账上，30 天柱状图一目了然。</p>
+          </article>
+          <article class="spell-card reveal" data-seal="六">
+            <h3>一机一码</h3>
+            <p>Ed25519 签名授权，首次启动可试用五天；激活码绑定本机灵符。</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- 截图 -->
+    <section class="section">
+      <div class="container">
+        <div class="section-head reveal">
+          <span class="seal">景</span>
+          <h2>结界之内</h2>
+          <p class="sub">主界面与香火钱账本</p>
+        </div>
+        <div class="grid grid-2">
+          <figure class="shot reveal" style="margin:0">
+            <img src="assets/img/main.png" alt="符卡作业簿主界面：左侧摘录、中间翻译、右侧答案" loading="lazy" />
+          </figure>
+          <figure class="shot reveal" style="margin:0">
+            <img src="assets/img/usage.png" alt="香火钱账本：用量统计与最近调用记录" loading="lazy" />
+          </figure>
+        </div>
+      </div>
+    </section>
+
+    <!-- 数据 -->
+    <section class="section tight">
+      <div class="container">
+        <div class="stats reveal">
+          <div class="stat"><b>6</b><span>大功能</span></div>
+          <div class="stat"><b>30 天</b><span>用量图表</span></div>
+          <div class="stat"><b>5 天</b><span>免费试用</span></div>
+          <div class="stat"><b>1 机 1 码</b><span>授权方式</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 下载 CTA -->
+    <section class="section">
+      <div class="container">
+        <div class="spell-card reveal" style="padding:46px;text-align:center" data-seal="召">
+          <h3 style="font-size:30px;margin-bottom:8px">要来试试吗？</h3>
+          <p style="max-width:560px;margin:0 auto 26px">
+            下载安装包，首次启动可试用五天。结界已开，只等你的灵符。
+          </p>
+          <a class="btn btn-primary" href="https://github.com/Jerry9335/SpellCardHomework/releases/download/v1.0.1/SpellCardHomework-Setup-1.0.1.exe">前往下载 v1.0.1</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-grid">
+        <div>
+          <h4>符卡作业簿</h4>
+          <p>～ 抽符 · 退治 · 收卡 ～</p>
+          <p>东方 Project 风格的非商业同人工具，仅供个人学习与交流使用。</p>
+        </div>
+        <div>
+          <h4>导航</h4>
+          <a href="index.html">首页</a>
+          <a href="features.html">功能介绍</a>
+          <a href="https://github.com/Jerry9335/SpellCardHomework/releases/download/v1.0.1/SpellCardHomework-Setup-1.0.1.exe">下载</a>
+          <a href="download.html#activate">授权与试用</a>
+        </div>
+        <div>
+          <h4>联系</h4>
+          <a href="mailto:1651452812@qq.com">Shinichi · 1651452812@qq.com</a>
+          <a href="mailto:3530209532@qq.com">Fastrof · 3530209532@qq.com</a>
+          <a href="https://github.com/Jerry9335/SpellCardHomework" target="_blank" rel="noopener">GitHub 仓库</a>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <span>© <span data-year>2026</span> Shinichi &amp; Fastrof · 代码 MIT 协议</span>
+        <span>东方 Project 角色版权归 ZUN / 上海爱丽丝幻乐团所有，本项目为非商业二次创作。</span>
+      </div>
+    </div>
+  </footer>
+
+  <script src="assets/js/main.js"></script>
+</body>
+</html>
