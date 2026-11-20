@@ -35,17 +35,6 @@ Windows 桌面小工具：**截屏识题 → 英文翻译 → AI 作答 → 全�
 | --- | --- |
 | ![启动](docs/splash.png) | ![激活](docs/activation_firstrun.png) |
 
-## 官网
-
-静态官网在 [HTML/](./HTML/index.html)：纯 HTML / CSS / JS，无构建步骤，双击就能看。
-
-![官网首页](docs/site_home.png)
-
-- 首页：HTML/index.html
-- 功能介绍：HTML/features.html
-- 下载：HTML/download.html
-- 部署到 GitHub Pages 的方法见 [HTML/README.md](./HTML/README.md)（已附带 Actions 工作流）
-
 ## 系统要求
 
 - Windows 10 / 11（x64）
