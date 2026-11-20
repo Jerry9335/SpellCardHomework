@@ -52,12 +52,6 @@ Windows 桌面小工具：**截屏识题 → 英文翻译 → AI 作答 → 全�
 | --- | --- |
 | `SpellCardHomework-Setup-1.0.1.exe` | 常规安装包（Inno Setup） |
 
-> 安装时会显示《最终用户许可协议》，需选择「我同意」才能继续；静默安装（`/VERYSILENT`）会自动跳过该页。
->
-> 卸载会清除本机授权记录（保留设置与 API Key），重装后需要重新试用或激活。
-
-![许可协议](docs/installer_eula.png)
-
 ### 方式二：源码运行
 
 ```bash
