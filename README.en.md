@@ -35,17 +35,6 @@ A small Windows desktop tool: **screenshot → OCR → translate → AI answer �
 | --- | --- |
 | ![Splash](docs/splash.png) | ![Activation](docs/activation_firstrun.png) |
 
-## Website
-
-A static site lives in [HTML/](./HTML/index.html): plain HTML / CSS / JS, no build step.
-
-![Website home](docs/site_home.png)
-
-- Home: HTML/index.html
-- Features: HTML/features.html
-- Download: HTML/download.html
-- Deployment instructions: [HTML/README.md](./HTML/README.md) (GitHub Actions workflow included)
-
 ## Requirements
 
 - Windows 10 / 11 (x64)
