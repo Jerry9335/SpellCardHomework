@@ -35,14 +35,24 @@ python -m http.server 8080
 
 ## 部署到 GitHub Pages
 
-工作流 `.github/workflows/pages.yml` 会从仓库根目录挑出官网文件，
-装进 `_site` 再发布，不会把源码 / 安装包 / 文档一起发出去。
+当前仓库的 Pages 源是 **`main` 分支的 `/docs` 目录**：
 
-1. 把仓库推到 GitHub
-2. 仓库 **Settings → Pages → Build and deployment → Source** 选 **GitHub Actions**
-3. 推送 `index.html` / `features.html` / `download.html` 或 `assets/css|js|img|audio` 的改动
-   （或手动运行 `Deploy site` 工作流）
-4. 等 Actions 跑完，访问 `https://jerry9335.github.io/SpellCardHomework/`
+- 根目录的 `index.html` / `assets/...` 是**工作副本**
+- `docs/` 里的是**发布副本**，真正被 Pages 访问的是它
+- 改完根目录后，跑一次同步脚本：
+
+```powershell
+python tools/sync_site_to_docs.py
+```
+
+脚本会把 `index.html`、`features.html`、`download.html` 和
+`assets/css|js|img|audio` 复制到 `docs/` 下。
+
+然后提交并推送 `docs/` 的改动，等 Pages 构建完成即可。
+
+> `.github/workflows/pages.yml` 是「用 GitHub Actions 从根目录发布」的备用方案。
+> 如果以后把 Pages 源改成 **GitHub Actions**，推根目录就会自动发布 `_site`；
+> 现在 Pages 用 `/docs`，所以日常更新以 `docs/` 为准，或跑同步脚本。
 
 ## 背景音乐
 
