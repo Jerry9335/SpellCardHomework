@@ -321,22 +321,39 @@
     window.addEventListener("pagehide", function () { persist(true); });
     document.addEventListener("visibilitychange", function () { persist(true); });
 
-    // 自动播放被拦截时：用户第一次点/按任意地方就开声音，不需要找唱片机
-    function unlock(ev) {
-      if (ev && ev.target && ev.target.closest && ev.target.closest("#bgm-player")) return;
-      audio.muted = false;
-      if (desired && audio.paused) {
-        var p = audio.play();
-        if (p && p.catch) p.catch(function () {});
-      }
-      updateUi();
+    // 自动播放被拦截时：用户第一次点击 / 按键 / 触摸 / 滚动，都尝试起播
+    var unlocked = false;
+    function cleanupUnlock() {
+      if (unlocked) return;
+      unlocked = true;
       window.removeEventListener("pointerdown", unlock, true);
       window.removeEventListener("keydown", unlock, true);
       window.removeEventListener("touchstart", unlock, true);
+      window.removeEventListener("wheel", unlock, true);
+      window.removeEventListener("touchmove", unlock, true);
+      window.removeEventListener("scroll", unlock, true);
+    }
+
+    function unlock(ev) {
+      if (ev && ev.target && ev.target.closest && ev.target.closest("#bgm-player")) return;
+      audio.muted = false;
+      if (audio.paused) {
+        var p = audio.play();
+        if (p && p.then) {
+          p.then(cleanupUnlock).catch(function () {});
+        }
+      } else {
+        cleanupUnlock();
+      }
+      updateUi();
     }
     window.addEventListener("pointerdown", unlock, true);
     window.addEventListener("keydown", unlock, true);
     window.addEventListener("touchstart", unlock, true);
+    window.addEventListener("wheel", unlock, { capture: true, passive: true });
+    window.addEventListener("touchmove", unlock, { capture: true, passive: true });
+    window.addEventListener("scroll", unlock, { capture: true, passive: true });
+    audio.addEventListener("playing", cleanupUnlock, { once: true });
 
     document.addEventListener("visibilitychange", function () {
       persist(true);
