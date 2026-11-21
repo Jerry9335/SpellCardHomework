@@ -222,6 +222,8 @@
     audio.preload = "auto";
     audio.volume = 0.5;
     audio.loop = false;
+    audio.autoplay = true;
+    audio.setAttribute("playsinline", "");
     audio.src = BGM_TRACKS[index].src;
 
     var player = document.createElement("div");
@@ -232,7 +234,7 @@
       '  <span class="bgm-hole" aria-hidden="true"></span>',
       '</button>',
       '<button class="bgm-next" type="button" aria-label="下一首" title="下一首">⏭</button>',
-      '<span class="bgm-tip" aria-live="polite">点唱片播放</span>'
+      '<span class="bgm-tip" aria-live="polite">背景音乐</span>'
     ].join("");
     document.body.appendChild(player);
     // 把 audio 挂到 DOM 里（隐藏），方便调试和检查播放状态
@@ -255,19 +257,13 @@
 
     function updateUi() {
       var playing = !audio.paused;
-      var muted = playing && audio.muted;
       player.classList.toggle("playing", playing);
-      player.classList.toggle("muted", muted);
       player.classList.toggle("needs-tap", !playing && desired);
       disc.setAttribute("aria-label", playing ? "暂停背景音乐" : "播放背景音乐");
-      if (muted) {
-        tip.textContent = "已静音播放 · 点页面任意处开启声音";
-      } else if (playing) {
+      if (playing) {
         tip.textContent = "♪ " + BGM_TRACKS[index].name;
-      } else if (desired) {
-        tip.textContent = "点页面任意处开启背景音乐";
       } else {
-        tip.textContent = "点唱片播放";
+        tip.textContent = "背景音乐";
       }
     }
 
@@ -284,9 +280,10 @@
       audio.muted = false;
       var p = audio.play();
       if (p && p.catch) {
-        p.catch(function () {
-          if (force) updateUi();
-          else startMuted();
+        p.catch(function (err) {
+          // 只有「浏览器策略拦截」才静音兜底；加载未完成则等 canplay 重试
+          if (!force && err && err.name === "NotAllowedError") startMuted();
+          else updateUi();
         });
       }
     }

@@ -1,4 +1,4 @@
-/* =========================================================
+﻿/* =========================================================
    符卡作业簿 · 官网样式
    深色神社 / 红白 / 樱花 / 符卡
    ========================================================= */
@@ -811,12 +811,4 @@ details.faq p { margin: 0 0 14px; color: var(--muted); font-size: 14px; }
   .bgm-player::after { right: 30px; bottom: 41px; width: 8px; height: 8px; }
 }
 
-.bgm-player.needs-tap .bgm-tip {
-  opacity: 1;
-  transform: none;
-}
 
-.bgm-player.muted .bgm-tip {
-  opacity: 1;
-  transform: none;
-}
