@@ -231,7 +231,6 @@
       '  <span class="bgm-hole" aria-hidden="true"></span>',
       '</button>',
       '<button class="bgm-next" type="button" aria-label="下一首" title="下一首">⏭</button>',
-      '<button class="bgm-unmute" type="button" aria-label="开启背景音乐声音">开启声音</button>',
       '<span class="bgm-tip" aria-live="polite">背景音乐</span>'
     ].join("");
     document.body.appendChild(player);
@@ -242,7 +241,6 @@
 
     var disc = player.querySelector(".bgm-disc");
     var nextBtn = player.querySelector(".bgm-next");
-    var unmuteBtn = player.querySelector(".bgm-unmute");
     var tip = player.querySelector(".bgm-tip");
     var restored = false;
     var lastSave = 0;
@@ -258,23 +256,12 @@
       var playing = !audio.paused;
       player.classList.toggle("playing", playing);
       player.classList.toggle("needs-tap", !playing && desired);
-      player.classList.toggle("muted", audio.muted);
       disc.setAttribute("aria-label", playing ? "暂停背景音乐" : "播放背景音乐");
-      if (audio.muted) {
-        tip.textContent = "🔇 开启声音";
-      } else if (playing) {
+      if (playing) {
         tip.textContent = "♪ " + BGM_TRACKS[index].name;
       } else {
         tip.textContent = "背景音乐";
       }
-    }
-
-    function startMuted() {
-      // 有声音的自动播放被拦截：先静音播放，用户点「开启声音」或任意处再开声音
-      audio.muted = true;
-      var p = audio.play();
-      if (p && p.catch) p.catch(function () { updateUi(); });
-      updateUi();
     }
 
     function play(force) {
@@ -283,8 +270,8 @@
       var p = audio.play();
       if (p && p.catch) {
         p.catch(function () {
-          // 浏览器策略 / 加载时序都可能拦截；统统一边静音起播，一边等用户手势
-          startMuted();
+          // 浏览器策略拦截时保持安静，等用户第一次点击/按键再起播
+          updateUi();
         });
       }
     }
@@ -312,10 +299,6 @@
       else pause();
     });
     nextBtn.addEventListener("click", function () { load(index + 1, true); });
-    unmuteBtn.addEventListener("click", function (ev) {
-      ev.stopPropagation();
-      play(true);
-    });
 
     audio.addEventListener("play", function () { persist(true); updateUi(); });
     audio.addEventListener("pause", updateUi);
@@ -341,15 +324,10 @@
     // 自动播放被拦截时：用户第一次点/按任意地方就开声音，不需要找唱片机
     function unlock(ev) {
       if (ev && ev.target && ev.target.closest && ev.target.closest("#bgm-player")) return;
-      if (audio.muted) {
-        audio.muted = false;
-        if (audio.paused && desired) {
-          var p = audio.play();
-          if (p && p.catch) p.catch(function () {});
-        }
-      } else if (desired && audio.paused) {
-        var p2 = audio.play();
-        if (p2 && p2.catch) p2.catch(function () {});
+      audio.muted = false;
+      if (desired && audio.paused) {
+        var p = audio.play();
+        if (p && p.catch) p.catch(function () {});
       }
       updateUi();
       window.removeEventListener("pointerdown", unlock, true);

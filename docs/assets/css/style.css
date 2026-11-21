@@ -730,31 +730,6 @@ details.faq p { margin: 0 0 14px; color: var(--muted); font-size: 14px; }
   color: #fff;
 }
 
-.bgm-unmute {
-  display: none;
-  height: 32px;
-  padding: 0 10px;
-  border-radius: 16px;
-  border: 1px solid var(--gold);
-  background: rgba(10, 7, 18, 0.88);
-  color: var(--gold);
-  cursor: pointer;
-  font-size: 11px;
-  line-height: 1;
-  white-space: nowrap;
-  transition: background 0.2s, color 0.2s;
-}
-
-.bgm-player.muted .bgm-unmute {
-  display: inline-flex;
-  align-items: center;
-}
-
-.bgm-unmute:hover {
-  background: var(--gold);
-  color: #1a1020;
-}
-
 .bgm-tip {
   position: absolute;
   right: 0;
