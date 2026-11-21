@@ -158,10 +158,6 @@
             <p>安装包没有购买代码签名证书，SmartScreen 会提示。点「更多信息 → 仍要运行」即可。校验和可以在上方复制核对。</p>
           </details>
           <details class="faq">
-            <summary>重装后为什么还是已激活？</summary>
-            <p>1.0.1 起卸载会自动清除授权与试用记录。如果是旧版本卸载的，旧卸载程序不会清，需要手动删除 <code>%APPDATA%\SpellCardHomework\license.json</code>、<code>trial.json</code>、<code>%LOCALAPPDATA%\SpellCardHomework\.spellcard_trial</code> 和注册表里的 <code>HKCU\Software\Shinichi\SpellCardHomework</code>。</p>
-          </details>
-          <details class="faq">
             <summary>首次启动直接进了主界面？</summary>
             <p>先确认「关于程序」里版本是 v1.0.1，再看 <code>%APPDATA%\SpellCardHomework\boot.log</code> 里的 <code>access=</code> 记录，能看出它读到了什么授权状态。</p>
           </details>
