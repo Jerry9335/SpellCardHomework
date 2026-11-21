@@ -90,6 +90,19 @@
   }
 
   /* ------------------------------ 导航 ------------------------------ */
+  function updateActiveNav() {
+    var path = location.pathname.split("/").pop() || "index.html";
+    document.querySelectorAll(".nav-links a").forEach(function (a) {
+      var href = a.getAttribute("href");
+      a.classList.remove("active");
+      if (!href || href.charAt(0) === "#" || href.indexOf("http") === 0) return;
+      var target = href.split("#")[0];
+      if (target === path || (path === "" && target === "index.html")) {
+        a.classList.add("active");
+      }
+    });
+  }
+
   function initNav() {
     var header = document.querySelector(".site-header");
     var toggle = document.querySelector(".nav-toggle");
@@ -174,11 +187,273 @@
     });
   }
 
+  /* ------------------------------ 背景音乐 ------------------------------ */
+  var BGM_KEY = "spellcard-bgm-v1";
+  var BGM_TRACKS = [
+    { src: "assets/audio/bgm-1.mp3", name: "曲目一" },
+    { src: "assets/audio/bgm-2.mp3", name: "曲目二" }
+  ];
+
+  function readBgmState() {
+    try {
+      var raw = sessionStorage.getItem(BGM_KEY);
+      if (!raw) return null;
+      var s = JSON.parse(raw);
+      return s && typeof s === "object" ? s : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function saveBgmState(state) {
+    try { sessionStorage.setItem(BGM_KEY, JSON.stringify(state)); } catch (e) {}
+  }
+
+  function initBgm() {
+    var saved = readBgmState();
+    var fresh = !saved;
+    // 新开一个标签页：随机选一首；已有会话：从上次的位置继续
+    var index = fresh ? (Math.random() < 0.5 ? 0 : 1)
+      : Math.max(0, Math.min(BGM_TRACKS.length - 1, parseInt(saved.index, 10) || 0));
+    var desired = fresh ? true : !!saved.playing;
+    var pendingTime = fresh ? 0 : Math.max(0, Number(saved.time) || 0);
+
+    var audio = new Audio();
+    audio.preload = "auto";
+    audio.volume = 0.5;
+    audio.loop = false;
+    audio.src = BGM_TRACKS[index].src;
+
+    var player = document.createElement("div");
+    player.className = "bgm-player";
+    player.id = "bgm-player";
+    player.innerHTML = [
+      '<button class="bgm-disc" type="button" aria-label="播放背景音乐" title="点一下播放 / 暂停">',
+      '  <span class="bgm-hole" aria-hidden="true"></span>',
+      '</button>',
+      '<button class="bgm-next" type="button" aria-label="下一首" title="下一首">⏭</button>',
+      '<span class="bgm-tip" aria-live="polite">点唱片播放</span>'
+    ].join("");
+    document.body.appendChild(player);
+    // 把 audio 挂到 DOM 里（隐藏），方便调试和检查播放状态
+    audio.style.display = "none";
+    audio.setAttribute("aria-hidden", "true");
+    player.appendChild(audio);
+
+    var disc = player.querySelector(".bgm-disc");
+    var nextBtn = player.querySelector(".bgm-next");
+    var tip = player.querySelector(".bgm-tip");
+    var restored = false;
+    var lastSave = 0;
+
+    function persist(force) {
+      var now = Date.now();
+      if (!force && now - lastSave < 900) return;
+      lastSave = now;
+      saveBgmState({ index: index, time: audio.currentTime || 0, playing: desired });
+    }
+
+    function updateUi() {
+      var playing = !audio.paused;
+      var muted = playing && audio.muted;
+      player.classList.toggle("playing", playing);
+      player.classList.toggle("muted", muted);
+      player.classList.toggle("needs-tap", !playing && desired);
+      disc.setAttribute("aria-label", playing ? "暂停背景音乐" : "播放背景音乐");
+      if (muted) {
+        tip.textContent = "已静音播放 · 点页面任意处开启声音";
+      } else if (playing) {
+        tip.textContent = "♪ " + BGM_TRACKS[index].name;
+      } else if (desired) {
+        tip.textContent = "点页面任意处开启背景音乐";
+      } else {
+        tip.textContent = "点唱片播放";
+      }
+    }
+
+    function startMuted() {
+      // 有声音的自动播放被拦截：先静音播放，用户第一次触碰页面立刻开声音
+      audio.muted = true;
+      var p = audio.play();
+      if (p && p.catch) p.catch(function () {});
+      updateUi();
+    }
+
+    function play(force) {
+      desired = true;
+      audio.muted = false;
+      var p = audio.play();
+      if (p && p.catch) {
+        p.catch(function () {
+          if (force) updateUi();
+          else startMuted();
+        });
+      }
+    }
+
+    function pause() {
+      desired = false;
+      audio.pause();
+      player.classList.remove("needs-tap");
+      persist(true);
+      updateUi();
+    }
+
+    function load(i, keepPlaying) {
+      index = (i + BGM_TRACKS.length) % BGM_TRACKS.length;
+      audio.src = BGM_TRACKS[index].src;
+      audio.currentTime = 0;
+      persist(true);
+      audio.muted = false;
+      if (keepPlaying || desired) play();
+      updateUi();
+    }
+
+    disc.addEventListener("click", function () {
+      if (audio.paused || audio.muted) play(true);
+      else pause();
+    });
+    nextBtn.addEventListener("click", function () { load(index + 1, true); });
+
+    audio.addEventListener("play", function () { persist(true); updateUi(); });
+    audio.addEventListener("pause", updateUi);
+    audio.addEventListener("ended", function () { load(index + 1, true); });
+    audio.addEventListener("timeupdate", function () { persist(false); });
+    audio.addEventListener("loadedmetadata", function () {
+      if (!restored && pendingTime > 0) {
+        try {
+          audio.currentTime = Math.min(pendingTime, Math.max(0, (audio.duration || pendingTime) - 0.5));
+        } catch (e) {}
+      }
+      restored = true;
+      if (desired && audio.paused) play(false);
+      updateUi();
+    });
+    audio.addEventListener("canplay", function () {
+      if (desired && audio.paused) play(false);
+    });
+    player.addEventListener("pointerdown", function () { persist(true); });
+    window.addEventListener("pagehide", function () { persist(true); });
+    document.addEventListener("visibilitychange", function () { persist(true); });
+
+    // 自动播放被拦截时：用户第一次点/按任意地方就开声音，不需要找唱片机
+    function unlock(ev) {
+      if (ev && ev.target && ev.target.closest && ev.target.closest("#bgm-player")) return;
+      if (audio.muted) {
+        audio.muted = false;
+        if (audio.paused && desired) {
+          var p = audio.play();
+          if (p && p.catch) p.catch(function () {});
+        }
+      } else if (desired && audio.paused) {
+        var p2 = audio.play();
+        if (p2 && p2.catch) p2.catch(function () {});
+      }
+      updateUi();
+      window.removeEventListener("pointerdown", unlock, true);
+      window.removeEventListener("keydown", unlock, true);
+      window.removeEventListener("touchstart", unlock, true);
+    }
+    window.addEventListener("pointerdown", unlock, true);
+    window.addEventListener("keydown", unlock, true);
+    window.addEventListener("touchstart", unlock, true);
+
+    document.addEventListener("visibilitychange", function () {
+      persist(true);
+      if (!document.hidden && desired && audio.paused) play(false);
+    });
+    window.addEventListener("pageshow", function () {
+      if (desired && audio.paused) play(false);
+    });
+
+    if (desired) play(false);
+    persist(true);
+    updateUi();
+  }
+
+  /* ------------------------------ 站内无刷新跳转 ------------------------------ */
+  function refreshPage() {
+    updateActiveNav();
+    initReveal();
+    initCopy();
+    initYear();
+  }
+
+  function initRouter() {
+    // 本地双击（file://）时 fetch 会被浏览器拦住，退回普通跳转
+    if (location.protocol === "file:") return;
+    var main = document.querySelector("main");
+    if (!main) return;
+    var loading = false;
+
+    function internalUrl(a) {
+      if (!a || a.target === "_blank" || a.hasAttribute("download")) return null;
+      var href = a.getAttribute("href");
+      if (!href || href.charAt(0) === "#" || /^(mailto|tel|javascript):/i.test(href)) return null;
+      var url;
+      try { url = new URL(href, location.href); } catch (e) { return null; }
+      if (url.origin !== location.origin) return null;
+      if (!/\.html?$/.test(url.pathname) && !/\/$/.test(url.pathname)) return null;
+      return url;
+    }
+
+    function swap(html, url, push) {
+      var doc = new DOMParser().parseFromString(html, "text/html");
+      var nextMain = doc.querySelector("main");
+      if (!nextMain) { location.href = url.href; return; }
+      main.innerHTML = nextMain.innerHTML;
+      var nextFooter = doc.querySelector("footer");
+      var curFooter = document.querySelector("footer");
+      if (nextFooter && curFooter) curFooter.innerHTML = nextFooter.innerHTML;
+      if (doc.title) document.title = doc.title;
+      var nd = doc.querySelector('meta[name="description"]');
+      var cd = document.querySelector('meta[name="description"]');
+      if (nd && cd) cd.setAttribute("content", nd.getAttribute("content") || "");
+      if (push) history.pushState({}, "", url.href);
+      refreshPage();
+      if (url.hash) {
+        var el = document.getElementById(url.hash.slice(1));
+        if (el) el.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "start" });
+        else window.scrollTo(0, 0);
+      } else {
+        window.scrollTo(0, 0);
+      }
+    }
+
+    function go(url, push) {
+      if (loading) return;
+      loading = true;
+      fetch(url.href, { cache: "no-store" })
+        .then(function (r) { if (!r.ok) throw new Error(r.status); return r.text(); })
+        .then(function (html) { swap(html, url, push); })
+        .catch(function () { location.href = url.href; })
+        .finally(function () { loading = false; });
+    }
+
+    document.addEventListener("click", function (e) {
+      if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      var a = e.target && e.target.closest ? e.target.closest("a") : null;
+      var url = internalUrl(a);
+      if (!url) return;
+      if (url.pathname === location.pathname && url.search === location.search && url.hash) return;
+      e.preventDefault();
+      var nav = document.querySelector(".nav-links");
+      if (nav) nav.classList.remove("open");
+      go(url, true);
+    });
+
+    window.addEventListener("popstate", function () {
+      go(new URL(location.href), false);
+    });
+  }
+
   document.addEventListener("DOMContentLoaded", function () {
     initPetals();
     initNav();
     initReveal();
     initCopy();
     initYear();
+    initBgm();
+    initRouter();
   });
 })();

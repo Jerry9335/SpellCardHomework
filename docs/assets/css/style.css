@@ -650,3 +650,173 @@ details.faq p { margin: 0 0 14px; color: var(--muted); font-size: 14px; }
 .glossary th { color: var(--gold-soft); font-weight: 600; letter-spacing: 1px; white-space: nowrap; }
 .glossary tr:hover td { background: rgba(200, 50, 60, 0.06); }
 .glossary td:first-child { color: var(--ink); white-space: nowrap; }
+
+/* =========================================================
+   背景音乐 · 右下角唱片机
+   ========================================================= */
+.bgm-player {
+  position: fixed;
+  right: 22px;
+  bottom: 22px;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  user-select: none;
+}
+
+.bgm-disc {
+  position: relative;
+  width: 64px;
+  height: 64px;
+  padding: 0;
+  border: 2px solid var(--gold);
+  border-radius: 50%;
+  background:
+    repeating-radial-gradient(circle at 50% 50%, #0b0712 0 2px, #1c1430 2px 4px),
+    radial-gradient(circle at 50% 50%, #2a1d44, #07050d 70%);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55), inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+  cursor: pointer;
+  animation: bgm-spin 6s linear infinite;
+  animation-play-state: paused;
+  transition: border-color 0.2s, transform 0.2s;
+}
+
+.bgm-disc:hover { border-color: var(--sakura); transform: scale(1.05); }
+.bgm-player.playing .bgm-disc { animation-play-state: running; }
+
+.bgm-hole {
+  position: absolute;
+  inset: 23px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, var(--sakura), var(--red) 55%, var(--red-deep));
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  box-shadow: inset 0 0 6px rgba(0, 0, 0, 0.4);
+}
+
+.bgm-hole::after {
+  content: "♪";
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+}
+
+.bgm-player.needs-tap .bgm-disc { animation: bgm-pulse 1.8s ease-in-out infinite; }
+
+.bgm-next {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: rgba(10, 7, 18, 0.8);
+  color: var(--gold);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  display: grid;
+  place-items: center;
+  transition: background 0.2s, border-color 0.2s, color 0.2s;
+}
+
+.bgm-next:hover {
+  background: var(--red);
+  border-color: var(--red-2);
+  color: #fff;
+}
+
+.bgm-tip {
+  position: absolute;
+  right: 0;
+  bottom: 78px;
+  max-width: 240px;
+  padding: 5px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(10, 7, 18, 0.88);
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+  opacity: 0;
+  transform: translateY(6px);
+  transition: opacity 0.2s, transform 0.2s;
+  pointer-events: none;
+  backdrop-filter: blur(6px);
+}
+
+.bgm-player:hover .bgm-tip,
+.bgm-player:focus-within .bgm-tip {
+  opacity: 1;
+  transform: none;
+}
+
+@keyframes bgm-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes bgm-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(232, 196, 106, 0.45); }
+  50% { box-shadow: 0 0 0 10px rgba(232, 196, 106, 0); }
+}
+
+@media (max-width: 640px) {
+  .bgm-player { right: 14px; bottom: 14px; }
+  .bgm-disc { width: 54px; height: 54px; }
+  .bgm-hole { inset: 19px; }
+  .bgm-tip { bottom: 64px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bgm-disc { animation: none !important; }
+}
+
+/* 唱臂：让右下角更像一台唱片机 */
+.bgm-player::before {
+  content: "";
+  position: absolute;
+  right: 40px;
+  bottom: 56px;
+  width: 38px;
+  height: 3px;
+  border-radius: 3px;
+  background: linear-gradient(90deg, var(--gold-soft), var(--red-2));
+  transform: rotate(-32deg);
+  transform-origin: 100% 50%;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+  z-index: 3;
+}
+
+.bgm-player::after {
+  content: "";
+  position: absolute;
+  right: 36px;
+  bottom: 50px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, var(--gold-soft), var(--red-deep));
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  pointer-events: none;
+  z-index: 4;
+}
+
+@media (max-width: 640px) {
+  .bgm-player::before { right: 34px; bottom: 46px; width: 30px; }
+  .bgm-player::after { right: 30px; bottom: 41px; width: 8px; height: 8px; }
+}
+
+.bgm-player.needs-tap .bgm-tip {
+  opacity: 1;
+  transform: none;
+}
+
+.bgm-player.muted .bgm-tip {
+  opacity: 1;
+  transform: none;
+}
