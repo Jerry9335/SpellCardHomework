@@ -210,13 +210,10 @@
   }
 
   function initBgm() {
-    var saved = readBgmState();
-    var fresh = !saved;
-    // 新开一个标签页：随机选一首；已有会话：从上次的位置继续
-    var index = fresh ? (Math.random() < 0.5 ? 0 : 1)
-      : Math.max(0, Math.min(BGM_TRACKS.length - 1, parseInt(saved.index, 10) || 0));
-    var desired = fresh ? true : !!saved.playing;
-    var pendingTime = fresh ? 0 : Math.max(0, Number(saved.time) || 0);
+    // 每次真正打开/刷新页面都重新随机一首；站内无刷新换页不会重跑这里
+    var index = Math.floor(Math.random() * BGM_TRACKS.length);
+    var desired = true;
+    var pendingTime = 0;
 
     var audio = new Audio();
     audio.preload = "auto";
@@ -234,6 +231,7 @@
       '  <span class="bgm-hole" aria-hidden="true"></span>',
       '</button>',
       '<button class="bgm-next" type="button" aria-label="下一首" title="下一首">⏭</button>',
+      '<button class="bgm-unmute" type="button" aria-label="开启背景音乐声音">开启声音</button>',
       '<span class="bgm-tip" aria-live="polite">背景音乐</span>'
     ].join("");
     document.body.appendChild(player);
@@ -244,6 +242,7 @@
 
     var disc = player.querySelector(".bgm-disc");
     var nextBtn = player.querySelector(".bgm-next");
+    var unmuteBtn = player.querySelector(".bgm-unmute");
     var tip = player.querySelector(".bgm-tip");
     var restored = false;
     var lastSave = 0;
@@ -259,8 +258,11 @@
       var playing = !audio.paused;
       player.classList.toggle("playing", playing);
       player.classList.toggle("needs-tap", !playing && desired);
+      player.classList.toggle("muted", audio.muted);
       disc.setAttribute("aria-label", playing ? "暂停背景音乐" : "播放背景音乐");
-      if (playing) {
+      if (audio.muted) {
+        tip.textContent = "🔇 开启声音";
+      } else if (playing) {
         tip.textContent = "♪ " + BGM_TRACKS[index].name;
       } else {
         tip.textContent = "背景音乐";
@@ -268,10 +270,10 @@
     }
 
     function startMuted() {
-      // 有声音的自动播放被拦截：先静音播放，用户第一次触碰页面立刻开声音
+      // 有声音的自动播放被拦截：先静音播放，用户点「开启声音」或任意处再开声音
       audio.muted = true;
       var p = audio.play();
-      if (p && p.catch) p.catch(function () {});
+      if (p && p.catch) p.catch(function () { updateUi(); });
       updateUi();
     }
 
@@ -280,10 +282,9 @@
       audio.muted = false;
       var p = audio.play();
       if (p && p.catch) {
-        p.catch(function (err) {
-          // 只有「浏览器策略拦截」才静音兜底；加载未完成则等 canplay 重试
-          if (!force && err && err.name === "NotAllowedError") startMuted();
-          else updateUi();
+        p.catch(function () {
+          // 浏览器策略 / 加载时序都可能拦截；统统一边静音起播，一边等用户手势
+          startMuted();
         });
       }
     }
@@ -311,6 +312,10 @@
       else pause();
     });
     nextBtn.addEventListener("click", function () { load(index + 1, true); });
+    unmuteBtn.addEventListener("click", function (ev) {
+      ev.stopPropagation();
+      play(true);
+    });
 
     audio.addEventListener("play", function () { persist(true); updateUi(); });
     audio.addEventListener("pause", updateUi);
