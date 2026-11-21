@@ -4,7 +4,13 @@ on:
   push:
     branches: [main]
     paths:
-      - "HTML/**"
+      - "index.html"
+      - "features.html"
+      - "download.html"
+      - "assets/css/**"
+      - "assets/js/**"
+      - "assets/img/**"
+      - "assets/audio/**"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
 
@@ -25,8 +31,16 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+
+      # 只把官网需要的文件装进 _site，避免把源码 / 安装包 / 文档一起发布
+      - name: Assemble static site
+        run: |
+          mkdir -p _site/assets
+          cp index.html features.html download.html _site/
+          cp -r assets/css assets/js assets/img assets/audio _site/assets/
+
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: HTML
+          path: _site
       - id: deployment
         uses: actions/deploy-pages@v4
