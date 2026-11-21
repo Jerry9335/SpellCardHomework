@@ -1,14 +1,16 @@
-# 符卡作业簿 · 官网（静态页面）
+# 符卡作业簿 · 官网（docs 目录）
 
-纯 HTML / CSS / JS，无构建步骤、无外部依赖。官网直接放在仓库根目录，和程序源码共用 `assets/`。
+官网全部放在 **`docs/`**，GitHub Pages 直接从 `main` 的 `/docs` 发布。
+纯 HTML / CSS / JS，无构建步骤、无外部依赖。
 
 ## 文件结构
 
 ```
-/
+docs/
 ├── index.html              首页（Hero、三道境界、符卡一览、截图、下载 CTA）
 ├── features.html           功能介绍 + 东方话术对照表
 ├── download.html           下载、校验和、安装步骤、授权、常见问题
+├── website.md              本说明
 └── assets/
     ├── css/style.css       全站样式（深色神社 / 红白 / 樱花 / 符卡）
     ├── js/main.js          樱花、导航、入场动画、复制、背景音乐、无刷新换页
@@ -16,43 +18,33 @@
     └── audio/
         ├── bgm-1.mp3       背景音乐 1
         └── bgm-2.mp3       背景音乐 2
-
-（`assets/char`、`assets/authors`、`assets/banner.png` 等是程序用的素材，
-  官网只引用 `assets/css`、`assets/js`、`assets/img`、`assets/audio`。）
 ```
+
+> 仓库根目录的 `assets/` 只放程序素材（`char/`、`authors/`、`banner.png`、`icon.*`、
+> `splash.png`、`toast_icon.png`），官网只引用 `docs/assets/` 下的文件。
 
 ## 本地预览
 
-在仓库根目录起一个本地服务器：
+在仓库根目录起一个本地服务器，把 `docs` 作为站点目录：
 
 ```powershell
-python -m http.server 8080
+python -m http.server 8080 --directory docs
 # 打开 http://127.0.0.1:8080
 ```
 
-> 不要直接双击 `index.html`（file://）。背景音乐跨页不断、无刷新换页都依赖 HTTP，
+> 不要直接双击 `docs/index.html`（file://）。背景音乐跨页不断、无刷新换页都依赖 HTTP，
 > 用本地服务器或 GitHub Pages 才能看到完整效果。
 
 ## 部署到 GitHub Pages
 
-当前仓库的 Pages 源是 **`main` 分支的 `/docs` 目录**：
+当前 Pages 源是 **`main` 分支的 `/docs` 目录**：
 
-- 根目录的 `index.html` / `assets/...` 是**工作副本**
-- `docs/` 里的是**发布副本**，真正被 Pages 访问的是它
-- 改完根目录后，跑一次同步脚本：
+1. 改完 `docs/` 里的文件，直接提交并推送到 `main`
+2. GitHub Pages 会自动构建 `/docs`
+3. 等 Actions 里的 `pages build and deployment` 跑完，访问
+   `https://jerry9335.github.io/SpellCardHomework/`
 
-```powershell
-python tools/sync_site_to_docs.py
-```
-
-脚本会把 `index.html`、`features.html`、`download.html` 和
-`assets/css|js|img|audio` 复制到 `docs/` 下。
-
-然后提交并推送 `docs/` 的改动，等 Pages 构建完成即可。
-
-> `.github/workflows/pages.yml` 是「用 GitHub Actions 从根目录发布」的备用方案。
-> 如果以后把 Pages 源改成 **GitHub Actions**，推根目录就会自动发布 `_site`；
-> 现在 Pages 用 `/docs`，所以日常更新以 `docs/` 为准，或跑同步脚本。
+不需要额外的工作流；仓库里只保留 Pages 自带的部署流程。
 
 ## 背景音乐
 
@@ -64,9 +56,9 @@ python tools/sync_site_to_docs.py
 
 ## 修改提示
 
-- 版本号写死在 `index.html` 的 kicker、`download.html` 的标题与下载卡片里（搜索 `v1.0.1`）
+- 版本号写死在 `docs/index.html` 的 kicker、`docs/download.html` 的标题与下载卡片里（搜索 `v1.0.1`）
 - 校验和对应 `installer/Output` 里的安装包
 - 下载按钮指向 GitHub Releases 的固定版本地址，发版后即可用
-- 樱花数量、颜色在 `assets/js/main.js` 的 `COLORS` 与 `count` 里改
-- 主色在 `assets/css/style.css` 顶部的 `:root` 变量里改
-- 换背景音乐：替换 `assets/audio/bgm-1.mp3` / `bgm-2.mp3`，文件名不变即可
+- 樱花数量、颜色在 `docs/assets/js/main.js` 的 `COLORS` 与 `count` 里改
+- 主色在 `docs/assets/css/style.css` 顶部的 `:root` 变量里改
+- 换背景音乐：替换 `docs/assets/audio/bgm-1.mp3` / `bgm-2.mp3`，文件名不变即可
