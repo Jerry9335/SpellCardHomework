@@ -37,34 +37,17 @@ Windows 桌面小工具：**截屏识题 → 英文翻译 → AI 作答 → 全�
 - 🔍 **查余额**：DeepSeek 账户余额查询
 - 🔐 **一机一码**：Ed25519 签名，首次启动可试用 5 天
 - 🌸 **东方 Project 风格界面**（AI 生成的二次创作立绘）
-- 🌅 **晨午宵绘卷**：输入 Konami 序列解锁的新主题，主界面与启动画面随早上 / 下午 / 晚上变化
 - 📰 **号外取件**：内置多线程下载器，支持 1–32 线程、断点续传、SHA256 校验、自动覆盖安装与重启提示
 
 ## 截图
 
-| 启动画面 | 结界许可（激活） |
+| 启动画面 | 下载窗口 |
 | --- | --- |
-| ![启动](docs/splash.png) | ![激活](docs/activation_firstrun.png) |
+| ![启动](docs/splash.png) | ![号外下载](docs/download_window.png) |
 
-| 香火钱账本（用量） | 设置 |
+| 发现新版本 | 设置 |
 | --- | --- |
-| ![账本](docs/usage.png) | ![设置](docs/settings.png) |
-
-### 晨午宵绘卷
-
-| 早上 | 下午 | 晚上 |
-| --- | --- | --- |
-| ![晨](docs/theme_morning.png) | ![午](docs/theme_afternoon.png) | ![夜](docs/theme_night.png) |
-
-### 号外取件
-
-| 下载窗口 | 下载完成 |
-| --- | --- |
-| ![号外下载](docs/download_window.png) | ![下载完成](docs/download_complete.png) |
-
-| 发现新版本 | 下载线程设置 |
-| --- | --- |
-| ![号外窗口](docs/update_dialog.png) | ![分片设置](docs/settings_threads.png) |
+| ![号外窗口](docs/update_dialog.png) | ![设置](docs/settings.png) |
 
 ## 系统要求
 
@@ -165,7 +148,6 @@ docs/                  截图与文档
 
 ### v1.0.5（2026-11-22）
 
-- **晨午宵绘卷**：Konami 序列解锁的新主题，主界面与启动画面随时段变化
 - **真半透明界面**：全窗口背景图 + 半透明面板，标题不再使用大面积黑色遮罩
 - **号外取件**：多线程下载安装包，支持 1–32 线程、暂停/继续、断点续传
 - **SHA256 校验**：下载后自动校验；不匹配或缺失时不自动安装
