@@ -7,7 +7,7 @@
   <img src="https://img.shields.io/badge/windows-0078D6?logo=windows&amp;logoColor=white" alt="Windows 10 / 11" />
   <img src="https://img.shields.io/badge/Python-14354C.svg?logo=python&amp;logoColor=white" alt="Python 3.10+" />
   <img src="https://img.shields.io/badge/License-MIT-e8c46a.svg" alt="MIT License" />
-  <img src="https://img.shields.io/badge/version-1.0.1-c8323c.svg" alt="v1.0.1" />
+  <img src="https://img.shields.io/badge/version-1.0.5-c8323c.svg" alt="v1.0.5" />
   <img src="https://img.shields.io/badge/Touhou-Project%20Fan%20Work-c8323c.svg" alt="Touhou Project fan work" />
   <img src="https://img.shields.io/badge/QQ-EB1923?logo=tencent-qq&amp;logoColor=white" alt="QQ" />
   <img src="https://img.shields.io/badge/Gmail-D14836?logo=gmail&amp;logoColor=white" alt="Gmail" />
@@ -37,6 +37,8 @@ Windows 桌面小工具：**截屏识题 → 英文翻译 → AI 作答 → 全�
 - 🔍 **查余额**：DeepSeek 账户余额查询
 - 🔐 **一机一码**：Ed25519 签名，首次启动可试用 5 天
 - 🌸 **东方 Project 风格界面**（AI 生成的二次创作立绘）
+- 🌅 **晨午宵绘卷**：输入 Konami 序列解锁的新主题，主界面与启动画面随早上 / 下午 / 晚上变化
+- 📰 **号外取件**：内置多线程下载器，支持 1–32 线程、断点续传、SHA256 校验、自动覆盖安装与重启提示
 
 ## 截图
 
@@ -47,6 +49,22 @@ Windows 桌面小工具：**截屏识题 → 英文翻译 → AI 作答 → 全�
 | 香火钱账本（用量） | 设置 |
 | --- | --- |
 | ![账本](docs/usage.png) | ![设置](docs/settings.png) |
+
+### 晨午宵绘卷
+
+| 早上 | 下午 | 晚上 |
+| --- | --- | --- |
+| ![晨](docs/theme_morning.png) | ![午](docs/theme_afternoon.png) | ![夜](docs/theme_night.png) |
+
+### 号外取件
+
+| 下载窗口 | 下载完成 |
+| --- | --- |
+| ![号外下载](docs/download_window.png) | ![下载完成](docs/download_complete.png) |
+
+| 发现新版本 | 下载线程设置 |
+| --- | --- |
+| ![号外窗口](docs/update_dialog.png) | ![分片设置](docs/settings_threads.png) |
 
 ## 系统要求
 
@@ -63,7 +81,7 @@ Windows 桌面小工具：**截屏识题 → 英文翻译 → AI 作答 → 全�
 
 | 文件 | 说明 |
 | --- | --- |
-| `SpellCardHomework-Setup-1.0.1.exe` | 常规安装包（Inno Setup） |
+| `SpellCardHomework-Setup-1.0.5.exe` | 常规安装包（Inno Setup） |
 
 ### 方式二：源码运行
 
@@ -145,6 +163,16 @@ docs/                  截图与文档
 
 ## 更新日志
 
+### v1.0.5（2026-11-22）
+
+- **晨午宵绘卷**：Konami 序列解锁的新主题，主界面与启动画面随时段变化
+- **真半透明界面**：全窗口背景图 + 半透明面板，标题不再使用大面积黑色遮罩
+- **号外取件**：多线程下载安装包，支持 1–32 线程、暂停/继续、断点续传
+- **SHA256 校验**：下载后自动校验；不匹配或缺失时不自动安装
+- **自动覆盖安装**：校验通过后静默安装，并提示现在重开或稍后自己开
+- **下载完成窗口**：支持把安装包拖到桌面 / 文件夹，另有选择目录兜底
+- **版本更新**：程序、安装包、启动图、文件版本统一为 v1.0.5
+
 ### v1.0.1（2026-11-20）
 
 - **授权升级**：激活码改为 Ed25519 非对称签名，程序里只放公钥，源码公开也无法伪造
@@ -172,10 +200,10 @@ Remove-ItemProperty "HKCU:\Software\Shinichi\SpellCardHomework" -Name trial -Err
 ```
 
 **Q：首次启动直接进了主界面？**
-先确认「关于程序」里版本是 **v1.0.1**，再看 `%APPDATA%\SpellCardHomework\boot.log` 里的 `access=` 记录。
+先确认「关于程序」里版本是 **v1.0.5**，再看 `%APPDATA%\SpellCardHomework\boot.log` 里的 `access=` 记录。
 
 **Q：激活码太长？**
-v1.0.1 的激活码约 130 字符，整段复制粘贴即可。
+v1.0.5 的激活码约 130 字符，整段复制粘贴即可。
 
 ## 开源协议与素材说明
 
@@ -196,6 +224,10 @@ v1.0.1 的激活码约 130 字符，整段复制粘贴即可。
 - **Fastrof**（副开发）— 界面美术 / 测试 / 素材整理 · 3530209532@qq.com
 
 ## Star History
+
+> **退治辛苦了！往赛钱箱里投一枚 ⭐，灵梦下次退治会更快。**
+>
+> [去 GitHub 往赛钱箱投一枚 ⭐](https://github.com/Jerry9335/SpellCardHomework/stargazers)
 
 <a href="https://www.star-history.com/?repos=jerry9335%2Fspellcardhomework&type=date&legend=top-left">
  <picture>

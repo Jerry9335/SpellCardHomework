@@ -1,4 +1,4 @@
-/* =========================================================
+﻿/* =========================================================
    符卡作业簿 · 官网样式
    深色神社 / 红白 / 樱花 / 符卡
    ========================================================= */
@@ -247,6 +247,16 @@ a:hover { color: #fff; }
   border-color: var(--line);
 }
 .btn-ghost:hover { border-color: var(--gold); }
+
+.support-line {
+  margin: 22px auto 12px;
+  max-width: 640px;
+  color: var(--muted);
+  font-size: 14px;
+  letter-spacing: 1px;
+}
+
+.support-line strong { color: var(--gold); }
 
 .hero-meta {
   display: flex;

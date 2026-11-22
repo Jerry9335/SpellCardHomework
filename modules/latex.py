@@ -6,6 +6,7 @@
 流式场景用 MathStream：它会等一个 $...$ 收尾了才转换，避免把半个公式切坏。
 """
 from __future__ import annotations
+import re
 
 import re
 
@@ -431,4 +432,20 @@ def to_paste_input(text: str) -> str:
     s = re.sub(r"(?<![A-Za-z])inf(?:inity)?(?![A-Za-z])", "∞", s)
     if re.search(r"[0-9()+\-*/^<>=,]", s):
         s = re.sub(r"\s+", "", s)
+    return s
+
+def normalize_answer(text: str) -> str:
+    """把答案归一化后用于比较（不改变真正填进去的内容）。
+
+    - 去空白、去 "$"
+    - 统一 Unicode 负号
+    - 去掉 "x=" / "y=" 之类的变量前缀
+    - 去掉末尾的 ".0"
+    """
+    s = (text or "").strip().replace("$", "")
+    s = s.replace("−", "-").replace("–", "-").replace("—", "-")
+    s = re.sub(r"\s+", "", s).lower()
+    s = re.sub(r"^[a-z]\s*=\s*", "", s)
+    if re.fullmatch(r"-?\d+\.0+", s):
+        s = s.rstrip("0").rstrip(".")
     return s

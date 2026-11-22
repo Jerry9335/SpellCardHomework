@@ -7,7 +7,7 @@
   <img src="https://img.shields.io/badge/windows-0078D6?logo=windows&amp;logoColor=white" alt="Windows 10 / 11" />
   <img src="https://img.shields.io/badge/Python-14354C.svg?logo=python&amp;logoColor=white" alt="Python 3.10+" />
   <img src="https://img.shields.io/badge/License-MIT-e8c46a.svg" alt="MIT License" />
-  <img src="https://img.shields.io/badge/version-1.0.1-c8323c.svg" alt="v1.0.1" />
+  <img src="https://img.shields.io/badge/version-1.0.5-c8323c.svg" alt="v1.0.5" />
   <img src="https://img.shields.io/badge/Touhou-Project%20Fan%20Work-c8323c.svg" alt="Touhou Project fan work" />
   <img src="https://img.shields.io/badge/QQ-EB1923?logo=tencent-qq&amp;logoColor=white" alt="QQ" />
   <img src="https://img.shields.io/badge/Gmail-D14836?logo=gmail&amp;logoColor=white" alt="Gmail" />
@@ -37,6 +37,8 @@ A small Windows desktop tool: **screenshot → OCR → translate → AI answer �
 - 🔍 **Balance check**: DeepSeek account balance
 - 🔐 **One machine, one code**: Ed25519 signatures, 5-day trial on first launch
 - 🌸 **Touhou Project fan-art UI** (AI-generated)
+- 🌅 **Morning/Noon/Night Scroll**: unlockable theme whose main window and splash change with the local time
+- 📰 **Extra download**: built-in multi-thread downloader with 1–32 threads, resume, SHA256, silent install and restart prompt
 
 ## Screenshots
 
@@ -47,6 +49,22 @@ A small Windows desktop tool: **screenshot → OCR → translate → AI answer �
 | Usage ledger | Settings |
 | --- | --- |
 | ![Ledger](docs/usage.png) | ![Settings](docs/settings.png) |
+
+### Morning/Noon/Night Scroll
+
+| Morning | Afternoon | Night |
+| --- | --- | --- |
+| ![Morning](docs/theme_morning.png) | ![Afternoon](docs/theme_afternoon.png) | ![Night](docs/theme_night.png) |
+
+### Extra download
+
+| Download window | Complete |
+| --- | --- |
+| ![Download](docs/download_window.png) | ![Complete](docs/download_complete.png) |
+
+| Update found | Thread setting |
+| --- | --- |
+| ![Update](docs/update_dialog.png) | ![Threads](docs/settings_threads.png) |
 
 ## Requirements
 
@@ -63,7 +81,7 @@ Download from [Releases](../../releases):
 
 | File | Description |
 | --- | --- |
-| `SpellCardHomework-Setup-1.0.1.exe` | Standard installer (Inno Setup) |
+| `SpellCardHomework-Setup-1.0.5.exe` | Standard installer (Inno Setup) |
 
 ### Option 2: Run from source
 
@@ -145,6 +163,16 @@ docs/                  screenshots and docs
 
 ## Changelog
 
+### v1.0.5 (2026-11-22)
+
+- **Morning/Noon/Night Scroll**: unlockable theme whose main window and splash change with time
+- **True translucent UI**: full-window artwork with semi-transparent panels; no large black title plate
+- **Extra download**: multi-thread installer download with 1–32 threads, pause/resume and resume support
+- **SHA256 verification**; auto-install is disabled if the checksum is missing or wrong
+- **Silent overwrite install** with a restart prompt
+- **Download-complete window** with drag-to-folder support and a directory picker fallback
+- **Version bump**: app, installer, splash and file metadata are now v1.0.5
+
 ### v1.0.1 (2026-11-20)
 
 - **Licensing upgraded** to Ed25519 asymmetric signatures; only the public key ships, so publishing the source cannot forge codes
@@ -172,10 +200,10 @@ Remove-ItemProperty "HKCU:\Software\Shinichi\SpellCardHomework" -Name trial -Err
 ```
 
 **Q: The first launch went straight to the main window.**
-Check that About shows **v1.0.1**, then look at the `access=` lines in `%APPDATA%\SpellCardHomework\boot.log`.
+Check that About shows **v1.0.5**, then look at the `access=` lines in `%APPDATA%\SpellCardHomework\boot.log`.
 
 **Q: The activation code is very long.**
-v1.0.1 codes are about 130 characters — paste the whole string.
+v1.0.5 codes are about 130 characters — paste the whole string.
 
 ## License and assets
 
@@ -196,6 +224,10 @@ For learning and personal use only. Users are responsible for complying with the
 - **Fastrof** — UI art / testing / assets · 3530209532@qq.com
 
 ## Star History
+
+> **退治辛苦了！往赛钱箱里投一枚 ⭐，灵梦下次退治会更快。**
+>
+> [Put a ⭐ into the donation box on GitHub](https://github.com/Jerry9335/SpellCardHomework/stargazers)
 
 <a href="https://www.star-history.com/?repos=jerry9335%2Fspellcardhomework&type=date&legend=top-left">
  <picture>

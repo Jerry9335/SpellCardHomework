@@ -4,7 +4,7 @@
 
 #define MyAppName "SpellCardHomework"
 #define MyAppDisplayName "符卡作业簿"
-#define MyAppVersion "1.0.1"
+#define MyAppVersion "1.0.5"
 #define MyAppPublisher "Shinichi & Fastrof"
 #define MyAppExeName "SpellCardHomework.exe"
 #define MyAppURL "https://github.com/"
@@ -45,9 +45,9 @@ Name: "resetlicense"; Description: "清除本机授权与试用记录（重新�
 Source: "..\dist\SpellCardHomework\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{group}\{#MyAppDisplayName}"; Filename: "{app}\{#MyAppExeName}"
+Name: "{group}\{#MyAppDisplayName}"; Filename: "{app}\{#MyAppExeName}"; AppUserModelID: "符卡作业簿"
 Name: "{group}\{cm:UninstallProgram,{#MyAppDisplayName}}"; Filename: "{uninstallexe}"
-Name: "{autodesktop}\{#MyAppDisplayName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
+Name: "{autodesktop}\{#MyAppDisplayName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon; AppUserModelID: "符卡作业簿"
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#MyAppDisplayName}}"; Flags: nowait postinstall skipifsilent

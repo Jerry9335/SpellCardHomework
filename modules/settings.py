@@ -9,7 +9,7 @@ import os
 
 APP_DIRNAME = "SpellCardHomework"
 APP_TITLE = "符卡作业簿"
-APP_VERSION = "1.0.1"
+APP_VERSION = "1.0.5"
 
 
 def config_dir() -> str:
@@ -57,6 +57,28 @@ DEFAULTS: dict = {
     "web_port": 9222,
     "clipboard_on": True,
     "auto_browser_only": True,
+    # 更新
+    "update_enabled": True,
+    "update_channel": "auto",
+    "update_interval_hours": 5,
+    "update_last_check": 0,
+    "update_snooze_until": 0,
+    "update_repo": "Jerry9335/SpellCardHomework",
+    "update_gitee_repo": "jerry6663/SpellCardHomework",
+    "update_last_version": "",
+    "update_max_threads": 8,
+    # 通知
+    "toast_enabled": True,
+    "toast_update": True,
+    "toast_trial": True,
+    "toast_balance": True,
+    "toast_auto": True,
+    "toast_quiet_start": 23,
+    "toast_quiet_end": 8,
+    "toast_seen": {},
+    # 主题
+    "theme": "classic",
+    "theme_unlocked": False,
 }
 
 

@@ -306,7 +306,8 @@ class WebPlayer:
         pages = [p for p in pages if (p.get("url") or "").startswith(("http://", "https://"))]
         hit = [p for p in pages if "PlayerHomework" in p.get("url", "")
                or "Player.aspx" in p.get("url", "")]
-        page = (hit or pages or [None])[0]
+        # 多个 Player 页时取最近打开的那个（列表末尾），避免连到旧标签页
+        page = (hit[-1] if hit else (pages[-1] if pages else None))
         if not page:
             raise CDPError("浏览器里没有页面")
         self.ws = CDP(page["webSocketDebuggerUrl"])
@@ -375,45 +376,60 @@ class WebPlayer:
         return self.js(_FEEDBACK_JS) or ""
 
     # ---- 写
-    def pick_choice(self, letter: str) -> str:
+    def _click_rid(self, rid: str, expect_checked: bool = True) -> str:
+        """点一个选项，并确认 checked 状态真的变成了期望值。"""
+        rid_js = json.dumps(rid)
+        for expr in ("document.getElementById(%s)" % rid_js,
+                     "(document.getElementById(%s) || {}).parentElement" % rid_js,
+                     "document.querySelector('label[for=' + %s + ']')" % rid_js):
+            self.js(_CLICK_JS % ("(%s) || null" % expr))
+            time.sleep(0.25)
+            st2 = self.state()
+            hit = [r for r in (st2.get("radios", []) + st2.get("checks", []))
+                   if r["id"] == rid]
+            if hit and bool(hit[0].get("checked")) == expect_checked:
+                return "ok"
+        return "not-checked"
+
+    def pick_choice(self, letter: str, multi: bool = False) -> str:
         letter = (letter or "").strip().upper()[:1]
         if not letter:
             return "no-letter"
         st = self.state()
-        pool = st.get("radios", []) + st.get("checks", [])
+        radios = st.get("radios", [])
+        checks = st.get("checks", [])
+        # 多选优先用复选框池；单选优先用单选框池，避免混在一起按位置点错
+        pool = (checks or radios) if multi else (radios or checks)
+        if not pool:
+            return "no-match"
         cand = [r for r in pool
                 if (r.get("label") or "").strip().upper().startswith(letter)]
-        if not cand and pool:
+        if not cand:
             # 选项本身没有字母（如 No / Yes），按 A/B/C 顺序取
             idx = ord(letter) - ord("A")
             if 0 <= idx < len(pool):
                 cand = [pool[idx]]
         if not cand:
             return "no-match"
-        if not cand:
-            return "no-match"
-        if cand[0].get("disabled"):
+        target = cand[0]
+        if target.get("disabled"):
             return "disabled"
-        rid = cand[0]["id"]
-        rid_js = json.dumps(rid)
-        for expr in ("document.getElementById(%s)" % rid_js,
-                     "(document.getElementById(%s) || {}).parentElement" % rid_js,
-                     "document.querySelector('label[for=' + %s + ']')" % rid_js):
-            self.js(_CLICK_JS % ("(%s) || null" % expr))
-            time.sleep(0.3)
-            st2 = self.state()
-            hit = [r for r in (st2.get("radios", []) + st2.get("checks", [])) if r["id"] == rid]
-            if hit and hit[0].get("checked"):
-                return "ok"
-        return "not-checked"
+        if target.get("checked"):
+            return "ok"
+        return self._click_rid(target["id"], True)
 
     def pick_multi(self, letters: list[str]) -> str:
-        """多选：逐个点，全中才算 ok。"""
+        """多选：先清掉旧勾选，再逐个点，全中才算 ok。"""
+        st = self.state()
+        for box in st.get("checks", []):
+            if box.get("checked"):
+                self._click_rid(box["id"], False)
+                time.sleep(0.15)
         bad = []
         for ch in letters:
-            if self.pick_choice(ch) != "ok":
+            if self.pick_choice(ch, multi=True) != "ok":
                 bad.append(ch)
-            time.sleep(0.35)
+            time.sleep(0.25)
         return "ok" if not bad else "fail:" + ",".join(bad)
 
     def leave_prompt(self) -> bool:
@@ -513,6 +529,7 @@ class WebPlayer:
         expr = ("(() => { const bs = [...document.querySelectorAll('button, a, [role=button]')]"
                 ".filter((b) => { const r = b.getBoundingClientRect();"
                 " if (!(r.width > 2 && r.height > 2)) return false;"
+                " if (b.disabled || b.getAttribute('aria-disabled') === 'true') return false;"
                 " return [b.innerText, b.getAttribute('aria-label'), b.getAttribute('title')]"
                 ".some((x) => x && " + reg + ".test(x.trim())); });"
                 " const d = bs.filter((b) => b.closest("
@@ -751,12 +768,24 @@ class WebPlayer:
         """把表达式写进剪贴板再 Ctrl+V 粘进编辑器（Pearson 会自己解析成分数/上标）。"""
         from . import clipboard
 
+        old = ""
+        try:
+            old = clipboard.get_text()
+        except Exception:
+            old = ""
         if not clipboard.copy_text(text):
             return False
-        self.key('a', 'KeyA', 65, 2)
-        time.sleep(0.08)
-        self.key('v', 'KeyV', 86, 2)
-        time.sleep(0.45)
+        try:
+            self.key('a', 'KeyA', 65, 2)
+            time.sleep(0.08)
+            self.key('v', 'KeyV', 86, 2)
+            time.sleep(0.45)
+        finally:
+            if old:
+                try:
+                    clipboard.copy_text(old)
+                except Exception:
+                    pass
         return True
 
     def insert_math(self, text: str) -> None:

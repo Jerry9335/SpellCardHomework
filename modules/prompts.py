@@ -1,3 +1,4 @@
+import re
 """提示词：题目提取（视觉 OCR）、中文翻译、作答。"""
 
 OCR_SYSTEM = """你是一个精准的“题目提取器”。用户会给你一张屏幕截图，截图里是某道练习题。
@@ -95,7 +96,7 @@ WEB_PROMPT = (
     "CHOICE: <单选题写一个字母；多选题写全部正确字母，用逗号分隔，如 A,C；否则写 ->\n"
     "MATRIX: <如果答案要填一个矩阵，写 行x列: 值1, 值2, …（行优先，每格用 a/b 形式的分数）；否则写 ->\n"
     "DROPDOWN: <如果题目有下拉框，按顺序写每个下拉框要选的选项编号，用 ; 分隔；没有下拉框就写 ->\n"
-    "VALUE: <只有一个空就写这个值（分数写成 a/b）；有两个空就用分号分隔写 值1 ; 值2；否则写 ->\n"
+    "VALUE: <只写要填进输入框的内容，不要写 x= / y=，不要带单位、解释或句号；只有一个空就写这个值（分数写成 a/b）；有两个空就用分号分隔写 值1 ; 值2；否则写 ->\n"
     "矩阵元素不要乘开标量倍数，也不要因式分解。\n"
     "计算题先在草稿里代入算一遍，确认数值正确再输出；不确定就写 ->。\n"
     "如果题目里带【图注】或坐标轴描述（例如 A coordinate system has ...），以这段文字为准来判断图形，不要只靠数像素。\n"
@@ -124,6 +125,53 @@ def _spec_empty(body: str) -> bool:
     return body.replace(" ", "").replace("＞", ">") in ("", "-", "—", "–", "->", "→", "none", "null")
 
 
+_ALLOWED_CHOICES = set("ABCDEFGH")
+
+
+def _parse_letters(body: str) -> list[str]:
+    """从 CHOICE 内容里解析选项字母。
+
+    - "A, C"        -> ['A', 'C']
+    - "A and C"     -> ['A', 'C']   （忽略 and）
+    - "AC"          -> ['A', 'C']   （紧凑写法）
+    - "none of these" -> []        （不能被当成 N,O,N,E）
+    """
+    text = (body or "").upper()
+    out: list[str] = []
+    for token in re.split(r"[^A-Z]+", text):
+        if not token:
+            continue
+        if len(token) == 1:
+            if token in _ALLOWED_CHOICES and token not in out:
+                out.append(token)
+        elif len(token) <= 8 and all(ch in _ALLOWED_CHOICES for ch in token):
+            # 紧凑写法 "AC" / "ABD"
+            for ch in token:
+                if ch not in out:
+                    out.append(ch)
+        # 其他长单词（AND / NONE / OF / THESE）直接忽略
+    return sorted(out, key=lambda x: "ABCDEFGH".index(x)) if out else []
+
+
+def _parse_dropdown_nums(body: str) -> list[int]:
+    """解析 DROPDOWN 的编号。
+
+    - "1; 2"    -> [1, 2]
+    - "1) 3"    -> [3]     （"1)" 只是编号标签）
+    - "1、2、3" -> [1, 2, 3]
+    """
+    nums: list[int] = []
+    for seg in re.split(r"[;；,，、]+", body or ""):
+        seg = seg.strip()
+        if not seg:
+            continue
+        seg = re.sub(r"^\s*\d+\s*[).、:：]\s*", "", seg)
+        m = re.search(r"\d+", seg)
+        if m:
+            nums.append(int(m.group(0)))
+    return nums
+
+
 def parse_web_answer(raw: str) -> dict:
     """把模型的三行回答解析成 {choice, matrix, value, raw}。"""
     import re
@@ -135,8 +183,7 @@ def parse_web_answer(raw: str) -> dict:
         head = head.strip().upper()
         body = body.strip()
         if head == "DROPDOWN":
-            nums = [int(x) for x in re.findall(r"\d+", body)]
-            out["drops"] = nums
+            out["drops"] = _parse_dropdown_nums(body)
             continue
 
         if head == "CHOICE":
@@ -144,7 +191,8 @@ def parse_web_answer(raw: str) -> dict:
                 out["choice"] = ""
                 out["choices"] = []
             else:
-                letters = [c for c in re.findall(r"[A-Za-z]", body.upper())]
+                # 只认 A-H 的独立选项；"A and C" 不能被拆成 A,N,D,C
+                letters = _parse_letters(body)
                 out["choice"] = letters[0] if letters else ""
                 out["choices"] = letters
         elif head == "MATRIX" and not _spec_empty(body):
@@ -159,4 +207,3 @@ def parse_web_answer(raw: str) -> dict:
     out["values"] = vals
     out["value"] = vals[0] if vals else ""
     return out
-

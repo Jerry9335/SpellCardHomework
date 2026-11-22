@@ -145,3 +145,43 @@ def copy_text(text: str) -> bool:
         return True
     finally:
         user32.CloseClipboard()
+
+def get_text() -> str:
+    """读剪贴板里的纯文本；没有或不是文本时返回空串。"""
+    import ctypes
+    from ctypes import wintypes
+
+    CF_UNICODETEXT = 13
+    user32 = ctypes.WinDLL("user32", use_last_error=True)
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    user32.OpenClipboard.argtypes = [wintypes.HWND]
+    user32.OpenClipboard.restype = wintypes.BOOL
+    user32.GetClipboardData.argtypes = [wintypes.UINT]
+    user32.GetClipboardData.restype = wintypes.HANDLE
+    user32.CloseClipboard.restype = wintypes.BOOL
+    kernel32.GlobalLock.argtypes = [wintypes.HGLOBAL]
+    kernel32.GlobalLock.restype = wintypes.LPVOID
+    kernel32.GlobalUnlock.argtypes = [wintypes.HGLOBAL]
+    kernel32.GlobalUnlock.restype = wintypes.BOOL
+
+    for _ in range(10):
+        if user32.OpenClipboard(None):
+            break
+        time.sleep(0.05)
+    else:
+        return ""
+    try:
+        h = user32.GetClipboardData(CF_UNICODETEXT)
+        if not h:
+            return ""
+        ptr = kernel32.GlobalLock(h)
+        if not ptr:
+            return ""
+        try:
+            return ctypes.wstring_at(ptr)
+        finally:
+            kernel32.GlobalUnlock(h)
+    except Exception:
+        return ""
+    finally:
+        user32.CloseClipboard()
