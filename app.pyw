@@ -974,6 +974,7 @@ class App:
         self.actions_row.pack(fill="x", padx=14, pady=(0, 4), before=self.row2)
         self._actions_open = True
         self.btn_actions.configure(text="☰  其他术式 ▴")
+        self._refresh_theme_layout()
 
     def _collapse_actions(self) -> None:
         if not getattr(self, "_actions_open", False):
@@ -981,6 +982,20 @@ class App:
         self.actions_row.pack_forget()
         self._actions_open = False
         self.btn_actions.configure(text="☰  其他术式 ▾")
+        self._refresh_theme_layout()
+
+    def _refresh_theme_layout(self) -> None:
+        """展开/收起第二行后重新计算新主题面板位置，避免盖住目标栏。"""
+        if self.theme != theme.THEME_NEW:
+            return
+        try:
+            self.root.update_idletasks()
+        except Exception:
+            pass
+        try:
+            self.root.after_idle(self._layout_theme_panels)
+        except Exception:
+            pass
 
     def _run_action(self, fn) -> None:
         """执行动作后自动收起，并把开关状态写到窗口标题。"""

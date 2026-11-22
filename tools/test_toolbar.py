@@ -39,7 +39,11 @@ for _ in range(10):
     time.sleep(0.04)
 assert a._actions_open is True
 assert a.actions_row.winfo_manager() == "pack"
-print("展开 OK:", a.btn_actions.cget("text"))
+# 展开后第二行必须占住自己的位置：目标栏在三行下方，面板再往下
+assert a.row2.winfo_y() >= a.actions_row.winfo_y() + a.actions_row.winfo_height()
+assert a._theme_panel_frames[0].winfo_y() >= a.row2.winfo_y() + a.row2.winfo_height()
+print("展开 OK:", a.btn_actions.cget("text"),
+      "row2", a.row2.winfo_y(), "panel", a._theme_panel_frames[0].winfo_y())
 if win:
     capture.grab(win, "window").image.save(os.path.join(HERE, "shots", "toolbar_expanded.png"))
 
