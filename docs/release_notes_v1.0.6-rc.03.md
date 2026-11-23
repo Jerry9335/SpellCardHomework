@@ -1,4 +1,4 @@
-# SpellCardHomework 1.0.6-rc.03
+﻿# SpellCardHomework 1.0.6-rc.03
 
 > ～ 抽符 · 退治 · 收卡 ～
 
@@ -41,8 +41,8 @@
 ## 下载
 
 - 安装包：`SpellCardHomework-Setup-1.0.6-rc.03.exe`
-- 大小：62,766,143 字节（约 59.9 MiB）
-- SHA256：`b7d3db75f4645bfb844e16e6bbc6734ec1fe22cbe22151200e0882e92f9c2b17`
+- 大小：62,764,616 字节（约 59.9 MiB）
+- SHA256：`47263367032c3385ca504975cec038bc99aafdb9030c5bbdc318933dbda37dba`
 - 系统要求：Windows 10 / 11（x64）
 - 安装包不含源码；源码由作者保留。
 
@@ -64,3 +64,5 @@
 **项目**：<https://github.com/Jerry9335/SpellCardHomework>  
 **官网**：<https://jerry9335.github.io/SpellCardHomework/>  
 **Gitee**：<https://gitee.com/jerry6663/SpellCardHomework>
+
+

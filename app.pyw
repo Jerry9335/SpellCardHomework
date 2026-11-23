@@ -1429,7 +1429,7 @@ class App:
     def _on_setup_done(self, result: dict) -> None:
         self._setup_win = None
         if result.get("cancelled"):
-            self._boot_log("first-run setup cancelled")
+            _boot_log("first-run setup cancelled")
             try:
                 self.root.destroy()
             except Exception:
@@ -1510,12 +1510,20 @@ class App:
         self.root.after(350, lambda: self._start_first_run_resume(resume))
 
     def _start_first_run_resume(self, resume: int) -> None:
-        if resume > first_run.SETUP_STEPS:
-            self.open_onboarding(manual=False,
-                                 start_step=max(1, min(first_run.ONBOARD_STEPS,
-                                                       resume - first_run.SETUP_STEPS)))
-        else:
-            self.start_setup_wizard(start_step=max(1, min(first_run.SETUP_STEPS, resume)))
+        try:
+            if resume > first_run.SETUP_STEPS:
+                self.open_onboarding(manual=False,
+                                     start_step=max(1, min(first_run.ONBOARD_STEPS,
+                                                           resume - first_run.SETUP_STEPS)))
+            else:
+                self.start_setup_wizard(start_step=max(1, min(first_run.SETUP_STEPS, resume)))
+        except Exception as exc:
+            import traceback
+            _boot_log(f"first-run UI failed: {exc!r}\n{traceback.format_exc()[-1200:]}")
+            try:
+                messagebox.showerror(APP_TITLE, f"首次安装引导启动失败：\n{exc}")
+            except Exception:
+                pass
 
     def _open_settings(self) -> None:
         if self._settings_win is not None and self._settings_win.winfo_exists():
@@ -5805,9 +5813,20 @@ def main() -> None:
             except Exception:
                 pass
         try:
+            _show_first = first_run.should_show(app.cfg, pre_access, config_existed)
+            _boot_log(
+                f"first_run show={_show_first} pre_access={pre_access} "
+                f"config_existed={config_existed} "
+                f"state={app.cfg.get('onboarding_state')!r} "
+                f"resume={app.cfg.get('onboarding_resume_step')!r}")
             app.maybe_start_first_run(pre_access, config_existed)
-        except Exception:
-            pass
+        except Exception as _fr_e:
+            import traceback
+            _boot_log(f"first_run failed: {_fr_e!r}\n{traceback.format_exc()[-1200:]}")
+            try:
+                app._status(f"首次安装引导启动失败：{_fr_e}", "warn")
+            except Exception:
+                pass
 
     if splash is not None:
         splash[0].bind("<Button-1>", lambda _e: boot())

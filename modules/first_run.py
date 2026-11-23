@@ -30,8 +30,11 @@ def should_show(cfg: dict, pre_access: str, config_existed: bool,
         return False
     if state in (STATE_PENDING, STATE_IN_PROGRESS):
         return True
-    # 没有状态字段的 1.0.6 老用户：看激活前的事实，而不是版本号。
-    if pre_access == "fresh" and not config_existed:
+    # 激活前是 fresh 说明本机原本没有有效授权；这时即使目录里残留了
+    # 旧 config.json（例如先装过旧版、再在同一个 Windows 用户下重装），
+    # 也应该走首次安装契约，否则新用户会直接跳过 API/模型配置。
+    # 老用户在启动时通常已经是 licensed/trial/expired，不会命中这里。
+    if pre_access == "fresh":
         return True
     return False
 

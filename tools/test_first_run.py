@@ -17,6 +17,9 @@ def main() -> None:
     cfg = {}
     assert first_run.should_show(cfg, "fresh", False) is True
 
+    # 同机重装/目录残留旧 config，但激活前仍是 fresh：也要走首次安装契约
+    assert first_run.should_show({}, "fresh", True) is True
+
     # 已有配置/非 fresh：老用户，不弹
     assert first_run.should_show({}, "licensed", True) is False
     assert first_run.should_show({}, "trial", False) is False
