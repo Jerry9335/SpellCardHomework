@@ -20,13 +20,24 @@ def main() -> None:
     # 同机重装/目录残留旧 config，但激活前仍是 fresh：也要走首次安装契约
     assert first_run.should_show({}, "fresh", True) is True
 
-    # 已有配置/非 fresh：老用户，不弹
-    assert first_run.should_show({}, "licensed", True) is False
-    assert first_run.should_show({}, "trial", False) is False
+    # 已授权/试用但从未配置接口：仍然补首次契约，否则主界面无法答题
+    assert first_run.should_show({}, "licensed", True) is True
+    assert first_run.should_show({}, "trial", False) is True
+    assert first_run.should_show({}, "expired", True) is True
+    assert first_run.should_show({}, "tampered", True) is True
 
-    # done / legacy 永不自动弹
+    # 已配置过 API Key 的老用户即使授权 expired 也不弹
+    assert first_run.has_setup({"api_key": "sk-test"}) is True
+    assert first_run.should_show({"api_key": "sk-test"}, "expired", True) is False
+    assert first_run.should_show({"api_key": "sk-test"}, "licensed", True) is False
+    assert first_run.has_setup({"model": "qwen2.5:7b",
+                                "base_url": "http://localhost:11434/v1"}) is True
+
+    # done 永不自动弹；legacy 只有在确实配置过接口时才算老用户
     assert first_run.should_show({"onboarding_state": "done"}, "fresh", False) is False
-    assert first_run.should_show({"onboarding_state": "legacy"}, "fresh", False) is False
+    assert first_run.should_show({"onboarding_state": "legacy"}, "fresh", False) is True
+    assert first_run.should_show({"onboarding_state": "legacy",
+                                  "api_key": "sk-test"}, "fresh", False) is False
 
     # 中断可续
     assert first_run.should_show({"onboarding_state": "pending"}, "licensed", True) is True

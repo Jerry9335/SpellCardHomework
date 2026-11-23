@@ -19,6 +19,23 @@ STATE_LEGACY = "legacy"
 SETUP_STEPS = 3
 ONBOARD_STEPS = 6
 
+# 这些字段一旦出现，说明用户已经真正配置过模型接口，属于老用户。
+_SETUP_KEYS = ("api_key_enc", "api_key", "vision_api_key_enc", "vision_api_key")
+_DEFAULT_BASE = "https://api.deepseek.com/v1"
+_DEFAULT_MODEL = "deepseek-flash"
+
+
+def has_setup(cfg: dict) -> bool:
+    """用户是否已经配置过可用的模型接口（用于判断老用户）。"""
+    for key in _SETUP_KEYS:
+        if str(cfg.get(key) or "").strip():
+            return True
+    base = str(cfg.get("base_url") or "").strip()
+    model = str(cfg.get("model") or "").strip()
+    # 只有默认 base/model 不算配置过；本地 Ollama / 自定义接口会留下非默认值。
+    return bool(base and base != _DEFAULT_BASE) or bool(
+        model and model != _DEFAULT_MODEL)
+
 
 def should_show(cfg: dict, pre_access: str, config_existed: bool,
                 manual: bool = False) -> bool:
@@ -26,15 +43,25 @@ def should_show(cfg: dict, pre_access: str, config_existed: bool,
     if manual:
         return True
     state = str(cfg.get("onboarding_state") or "").strip().lower()
-    if state in (STATE_DONE, STATE_LEGACY):
+    if state == STATE_DONE:
         return False
+    # legacy 只应属于真正配置过接口的老用户。旧版曾把“有 config”误标成
+    # legacy；如果配置里其实没有 API Key/自定义接口，就在这里修复，补上
+    # 首次契约，而不是永远跳过。
+    if state == STATE_LEGACY:
+        return not has_setup(cfg)
     if state in (STATE_PENDING, STATE_IN_PROGRESS):
         return True
     # 激活前是 fresh 说明本机原本没有有效授权；这时即使目录里残留了
     # 旧 config.json（例如先装过旧版、再在同一个 Windows 用户下重装），
     # 也应该走首次安装契约，否则新用户会直接跳过 API/模型配置。
-    # 老用户在启动时通常已经是 licensed/trial/expired，不会命中这里。
     if pre_access == "fresh":
+        return True
+    # 旧版/重装可能留下“有 config 但没有真正配置模型”的空壳；授权状态
+    # 也可能因为旧试用/机器码变化显示 expired/tampered，甚至已经恢复成
+    # licensed。只要从未配置过 API Key 或自定义接口，就补上契约与新手引导。
+    # 真正配置过的老用户会命中 has_setup，不会被打扰。
+    if not has_setup(cfg):
         return True
     return False
 

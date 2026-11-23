@@ -770,7 +770,9 @@ class WebPlayer:
     def main_context_id(self) -> int | None:
         """Player iframe 的 main world 上下文；Dojo 全局只在这里可见。"""
         frame = getattr(self, "player_frame", "")
-        for msg in getattr(self.ws, "events", []):
+        # 页面导航会先创建 about:blank 再创建正式页面的上下文；必须取最新的
+        # 一个，否则会拿到已经被销毁的旧 contextId。
+        for msg in reversed(getattr(self.ws, "events", [])):
             if msg.get("method") != "Runtime.executionContextCreated":
                 continue
             c = msg.get("params", {}).get("context", {})
@@ -783,8 +785,18 @@ class WebPlayer:
         cid = self.main_context_id()
         if cid is None:
             return None
-        r = self.ws.call("Runtime.evaluate",
-                         {"expression": expr, "contextId": cid, "returnByValue": True})
+        try:
+            r = self.ws.call("Runtime.evaluate",
+                             {"expression": expr, "contextId": cid, "returnByValue": True})
+        except CDPError as e:
+            if "context" not in str(e).lower():
+                raise
+            time.sleep(0.35)
+            cid = self.main_context_id()
+            if cid is None:
+                return None
+            r = self.ws.call("Runtime.evaluate",
+                             {"expression": expr, "contextId": cid, "returnByValue": True})
         if "exceptionDetails" in r:
             raise CDPError(str(r["exceptionDetails"].get("text"))[:160])
         return r.get("result", {}).get("value")

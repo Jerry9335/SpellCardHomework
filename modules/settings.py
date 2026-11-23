@@ -149,7 +149,7 @@ def _unprotect(stored: str) -> str:
 def load() -> dict:
     cfg = dict(DEFAULTS)
     try:
-        with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+        with open(CONFIG_PATH, "r", encoding="utf-8-sig") as f:
             data = json.load(f)
         if isinstance(data, dict):
             cfg.update({k: v for k, v in data.items() if k in DEFAULTS})

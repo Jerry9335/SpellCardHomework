@@ -60,8 +60,11 @@ def main() -> None:
     pump(root, 0.6)
     assert app._setup_win is None and app._onboarding_win is None
 
-    # 升级用户没有 onboarding 字段：只写 legacy，不弹。
+    # 升级用户没有 onboarding 字段，但已经配置过 API：只写 legacy，不弹。
     clear_state(app)
+    app.cfg["api_key"] = "sk-test-old-user"
+    settings.save(app.cfg)
+    app.cfg = settings.load()
     app.maybe_start_first_run("licensed", True)
     pump(root, 0.6)
     assert app._setup_win is None and app._onboarding_win is None

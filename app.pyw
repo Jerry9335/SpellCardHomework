@@ -5817,6 +5817,7 @@ def main() -> None:
             _boot_log(
                 f"first_run show={_show_first} pre_access={pre_access} "
                 f"config_existed={config_existed} "
+                f"has_setup={first_run.has_setup(app.cfg)} "
                 f"state={app.cfg.get('onboarding_state')!r} "
                 f"resume={app.cfg.get('onboarding_resume_step')!r}")
             app.maybe_start_first_run(pre_access, config_existed)

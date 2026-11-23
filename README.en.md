@@ -153,6 +153,7 @@ docs/                  screenshots and docs
 - **No re-prompt for existing users**: onboarding state distinguishes first installs from upgrades; reopen any time from Settings
 - **Version marker**: app, installer, splash and docs now read v1.0.6-rc.03
 - **Fix**: after activation, a reinstall with a stale `config.json` still enters the first-run contract and onboarding
+- **Fix**: users incorrectly marked `legacy`, or never configured an API/model, are routed back through the first-run contract
 
 ### v1.0.6 (2026-11-23)
 
