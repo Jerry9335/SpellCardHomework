@@ -44,7 +44,7 @@
 ## 下载
 
 - 安装包：`SpellCardHomework-Setup-1.0.6.exe`
-- SHA256：`19b74e6cb02626b4e04f1e4f7485caf9e84431b28abe90c0da7e7e0f247981cc`
+- SHA256：`f487fc9683602e8b1017deead6e6165cd3e7fe437055148626b681898fb64926`
 - 系统要求：Windows 10 / 11（x64）
 - 安装包不含源码；源码由作者保留。
 

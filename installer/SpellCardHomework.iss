@@ -5,15 +5,22 @@
 #define MyAppName "SpellCardHomework"
 #define MyAppDisplayName "符卡作业簿"
 #define MyAppVersion "1.0.6"
+#define MyAppFileVersion "1.0.6.0"
 #define MyAppPublisher "Shinichi, Fastrof & 会哈气の祥"
 #define MyAppExeName "SpellCardHomework.exe"
-#define MyAppURL "https://github.com/"
+#define MyAppURL "https://github.com/Jerry9335/SpellCardHomework"
 
 [Setup]
 AppId={{8F3A9C21-5B7D-4E6A-9C2F-1D4B7E8A6C10}
 AppName={#MyAppDisplayName}
 AppVersion={#MyAppVersion}
 AppVerName={#MyAppDisplayName} {#MyAppVersion}
+VersionInfoVersion={#MyAppFileVersion}
+VersionInfoProductVersion={#MyAppVersion}
+VersionInfoProductName={#MyAppDisplayName}
+VersionInfoCompany={#MyAppPublisher}
+VersionInfoDescription={#MyAppDisplayName} 安装程序
+VersionInfoCopyright=Copyright (C) 2025 Shinichi, Fastrof, 会哈气の祥
 AppPublisher={#MyAppPublisher}
 AppPublisherURL={#MyAppURL}
 AppSupportURL={#MyAppURL}
