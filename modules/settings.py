@@ -9,7 +9,7 @@ import os
 
 APP_DIRNAME = "SpellCardHomework"
 APP_TITLE = "符卡作业簿"
-APP_VERSION = "1.0.5"
+APP_VERSION = "1.0.6"
 
 
 def config_dir() -> str:
@@ -55,6 +55,9 @@ DEFAULTS: dict = {
     "minimize_on_capture": False,
     "save_key": True,
     "web_port": 9222,
+    "web_autostart": False,
+    "web_start_url": "https://kysu.edu",
+    "web_continue_on_wrong": True,
     "clipboard_on": True,
     "auto_browser_only": True,
     # 更新

@@ -214,7 +214,8 @@ def _trial_valid(data: dict | None) -> bool:
 def _used_before() -> bool:
     """之前用过这个程序吗（配置里有 API Key 就说明用过）。"""
     try:
-        with open(settings.CONFIG_PATH, encoding="utf-8") as f:
+        path = os.path.join(settings.config_dir(), "config.json")
+        with open(path, encoding="utf-8") as f:
             raw = json.load(f)
         return bool(raw.get("api_key_enc")) or bool(raw.get("vision_api_key_enc"))
     except Exception:
@@ -250,7 +251,10 @@ def trial_status(update: bool = True) -> tuple[str, int, str]:
     if not copies:
         if present:
             return "tampered", 0, "试用记录被改动过，需要重新激活"
-        # 没有试用记录（新机器 / 重装 / 手动清理）→ 当作全新用户
+        # 试用记录被清空，但本机配置里已经有 API Key：说明之前用过，不能再领试用
+        if _used_before():
+            return "expired", 0, "试用记录已被清除，需要激活码"
+        # 没有试用记录、也没有用过的痕迹（新机器）→ 当作全新用户
         return "fresh", 0, "尚未开启试用"
 
     first = min(int(c["first"]) for c in copies)

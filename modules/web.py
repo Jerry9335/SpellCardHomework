@@ -1,4 +1,4 @@
-﻿"""网页模式：通过 CDP（Chrome DevTools Protocol）直连浏览器，读 DOM、填答案、点交卷。
+"""网页模式：通过 CDP（Chrome DevTools Protocol）直连浏览器，读 DOM、填答案、点交卷。
 
 原理（学自参考实现「作业侠客」）：
 1. 用 --remote-debugging-port 启动一个独立浏览器窗口；
@@ -13,11 +13,14 @@ from __future__ import annotations
 import base64
 import json
 import os
+import re
 import socket
 import struct
 import time
 import urllib.parse
 import urllib.request
+
+from modules.choice_match import match_choice
 
 DEFAULT_PORT = 9222
 
@@ -60,6 +63,7 @@ class CDP:
         self.buf = buf.split(b"\r\n\r\n", 1)[1]
         self.mid = 0
         self.timeout = timeout
+        self.events: list[dict] = []
 
     def _recv(self, n: int) -> bytes:
         while len(self.buf) < n:
@@ -114,6 +118,10 @@ class CDP:
                 if "error" in msg:
                     raise CDPError(str(msg["error"])[:160])
                 return msg.get("result", {})
+            if "method" in msg:
+                self.events.append(msg)
+                if len(self.events) > 800:
+                    self.events = self.events[-500:]
         raise CDPError(f"{method} 超时")
 
     def close(self) -> None:
@@ -137,27 +145,73 @@ _STATE_JS = r"""
   const vis = (e) => { const r = e.getBoundingClientRect(); return r.width > 2 && r.height > 2; };
   const dlgs = [...document.querySelectorAll('[id*=ResizableDialog]')].filter(vis);
   const dlg = dlgs.length ? dlgs[dlgs.length - 1] : null;
-  const scope = dlg || document.body;
+  // 严格答题区根节点（学自 study-assistant）：
+  //   .playerViewer > .contentPanel > .contentHolder
+  // 找不到时回退旧的 contentHolder/top，再回退 body，保证旧 mock/旧 Pearson 仍可用。
+  const playerRoot = document.querySelector('.playerViewer');
+  let contentRoot = null;
+  if (playerRoot) {
+    const cp = playerRoot.querySelector('.contentPanel') || playerRoot;
+    const cand = cp.querySelector('.contentHolder') || cp;
+    // 只有这个根节点里真的有答题控件时才采用，避免某些布局把控件放在
+    // playerViewer 外面（旧 mock / 特殊页面）导致快照变空。
+    if (cand.querySelector('span.eqEditor, input[type=radio], input[type=checkbox], ' +
+                           'input[type=text], input[type=number], select, .xlFillinItem')) {
+      contentRoot = cand;
+    }
+  }
+  if (!contentRoot) {
+    contentRoot = document.getElementById('contentHolderbottom')
+      || document.getElementById('contentHoldertop')
+      || document.querySelector('.contentPanel .contentHolder')
+      || document.body;
+  }
+  const scope = dlg || contentRoot;
   const clean = (s) => (s || '').replace(/\u200b/g, '').replace(/[ \t]+/g, ' ')
                       .replace(/ ?\n ?/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
-  const fields = [...scope.querySelectorAll('span.eqEditor')].filter(vis).map((el) => ({
-    id: el.id, label: clean(el.getAttribute('aria-label')).slice(0, 120),
-    readonly: /true/i.test(el.getAttribute('aria-readonly') || '') }));
+  // 给每个答题控件一个页内唯一 UID，并记住对应的 DOM element。
+  // 读题后页面换题/旧控件被替换时 UID 会变化；即使 Pearson 保留了旧属性，
+  // __schElements 里“同一个 element”校验也能发现快照已过期。
+  const uidOf = (el) => {
+    let u = el.getAttribute && el.getAttribute('data-sch-uid');
+    if (!u) {
+      window.__schUidSeq = (window.__schUidSeq || 0) + 1;
+      u = 'u' + window.__schUidSeq + '_' + Math.random().toString(36).slice(2, 8);
+      try { el.setAttribute('data-sch-uid', u); } catch (e) {}
+    }
+    try {
+      window.__schElements = window.__schElements || new Map();
+      window.__schElements.set(u, el);
+    } catch (e) {}
+    return u;
+  };
+  const fields = [...scope.querySelectorAll('span.eqEditor')].filter(vis).map((el) => {
+    const cs = getComputedStyle(el);
+    const off = el.getAttribute('aria-disabled') === 'true'
+      || /(^|\s)disabled(\s|$)/i.test(el.className || '')
+      || !!el.closest('.disabled, [aria-disabled="true"]')
+      || parseFloat(cs.opacity || '1') < 0.9;
+    return {
+      id: el.id, uid: uidOf(el), label: clean(el.getAttribute('aria-label')).slice(0, 120),
+      readonly: /true/i.test(el.getAttribute('aria-readonly') || ''),
+      disabled: off };
+  });
   const radiosAll = [...scope.querySelectorAll('input[type=radio]')].filter(vis).map((el) => ({
-    id: el.id, label: clean(el.getAttribute('aria-label')).slice(0, 160), checked: !!el.checked,
+    id: el.id, uid: uidOf(el), label: clean(el.getAttribute('aria-label')).slice(0, 160),
+    checked: !!el.checked,
     disabled: !!el.disabled || /Disabled/.test(el.parentElement ? el.parentElement.className : '') }));
   // 只把「当前小问」的选项给模型/选择用；已答过的旧选项通常 disabled，会打乱字母对应
   const radios = radiosAll.filter((r) => !r.disabled);
   const radiosDisabled = radiosAll.length - radios.length;
   const inputs = [...scope.querySelectorAll('input[type=text], input[type=number], input[type=email]')]
       .filter(vis).filter((el) => !el.closest('span.eqEditor')).map((el) => ({
-        id: el.id, label: clean(el.getAttribute('aria-label')).slice(0, 120),
-        disabled: !!el.disabled }));
+        id: el.id, uid: uidOf(el), label: clean(el.getAttribute('aria-label')).slice(0, 120),
+        value: (el.value || '').slice(0, 200), disabled: !!el.disabled }));
   const checks = [...scope.querySelectorAll('input[type=checkbox]')].filter(vis).map((el) => ({
-    id: el.id, label: clean(el.getAttribute('aria-label')).slice(0, 160), checked: !!el.checked,
-    disabled: !!el.disabled }));
+    id: el.id, uid: uidOf(el), label: clean(el.getAttribute('aria-label')).slice(0, 160),
+    checked: !!el.checked, disabled: !!el.disabled }));
   const selects = [...scope.querySelectorAll('select')].filter(vis).map((el) => ({
-    id: el.id, label: clean(el.getAttribute('aria-label')).slice(0, 120),
+    id: el.id, uid: uidOf(el), label: clean(el.getAttribute('aria-label')).slice(0, 120),
     value: el.value, options: [...el.options].map((o) => o.text.trim()).slice(0, 20) }));
   const sx = window.scrollX || 0, sy = window.scrollY || 0;
   const imgs = [...scope.querySelectorAll('img, canvas, svg')].filter((el) => {
@@ -235,6 +289,11 @@ _STATE_JS = r"""
     return [b.innerText, b.getAttribute('aria-label'), b.getAttribute('title')]
       .some((x) => x && re.test(x.trim()));
   });
+  const btnEnabled = (re) => [...document.querySelectorAll('button')].some((b) => {
+    if (!vis(b) || b.disabled || b.getAttribute('aria-disabled') === 'true') return false;
+    return [b.innerText, b.getAttribute('aria-label'), b.getAttribute('title')]
+      .some((x) => x && re.test(x.trim()));
+  });
   // 当前做到第几小问（Pearson 顶部有 .progressText = "Part 2 of 5"）
   let partN = 0, partM = 0;
   const pt = document.querySelector('.progressText');
@@ -258,21 +317,346 @@ _STATE_JS = r"""
   }
 
   const dropdowns = [...scope.querySelectorAll('.xlFillinItem')].filter(vis).map((el) => ({
-    id: el.id, label: clean(el.getAttribute('aria-label') || '').slice(0, 200) }));
+    id: el.id, uid: uidOf(el), label: clean(el.getAttribute('aria-label') || '').slice(0, 200) }));
 
+  // 字段 inventory：页面渲染出来的答题控件数量，必须和快照实际捕获的数量一致。
+  // 少一个就说明还有控件没被识别（例如 Q14 的诱饵框/自定义控件），此时绝不让
+  // 模型盲答；宁可刷新/记录待人工，也不能漏字段提交。
+  const renderedEls = [...contentRoot.querySelectorAll(
+      'span.eqEditor, input[type=text], input[type=number], input[type=email], ' +
+      'input[type=radio], input[type=checkbox], select, .xlFillinItem')]
+    .filter(vis)
+    .filter((el) => !(el.matches('input[type=text], input[type=number], input[type=email]')
+                      && el.closest('span.eqEditor')))
+    .filter((el) => !(el.matches('select') && el.closest('.xlFillinItem')));
+  const capturedCount = fields.length + inputs.length + radiosAll.length
+                      + checks.length + selects.length + dropdowns.length;
+  const missingGroups = [...contentRoot.querySelectorAll('.xlMultipleChoice')]
+    .filter(vis)
+    .filter((g) => ![...g.querySelectorAll('input[type=radio], input[type=checkbox]')]
+      .some(vis)).length;
+  const inventory = {
+    rendered: renderedEls.length,
+    captured: capturedCount,
+    missing: Math.max(0, renderedEls.length - capturedCount) + missingGroups,
+    groups: missingGroups,
+    root: String(contentRoot.id || contentRoot.className || contentRoot.tagName || '')
+      .slice(0, 80),
+  };
+  const incomplete = inventory.missing > 0;
+
+  // Pearson 左侧题号列表：aria-label = "Question N, Correct / Partially correct"
+  const questions = [...document.querySelectorAll('a.questionLabel')].map((a) => {
+    const m = /Question\s+(\d+)/i.exec(a.innerText || '');
+    return { n: m ? parseInt(m[1], 10) : 0,
+             status: clean(a.getAttribute('aria-label') || ''),
+             selected: !!(a.closest('li.selected')) };
+  }).filter((x) => x.n > 0);
+  const selectedQ = questions.find((x) => x.selected);
+  const qno = selectedQ ? selectedQ.n : 0;
+
+  // 内嵌图形题：返回图形控件和坐标轴映射，供自动绘图使用
+  let graph = null;
+  const gEl = document.querySelector('.graphControl .xygraph, .xygraph');
+  if (gEl) {
+    const gr = gEl.getBoundingClientRect();
+    if (gr.width > 80 && gr.height > 80) {
+      let xmin = -6, xmax = 6, ymin = -20, ymax = 10;
+      for (const d of [...gEl.querySelectorAll('[data-dojo-props]')]) {
+        const p = d.getAttribute('data-dojo-props') || '';
+        const mm = /minimum:\s*(-?\d+(?:\.\d+)?).*?maximum:\s*(-?\d+(?:\.\d+)?)/.exec(p);
+        if (!mm) continue;
+        if (/orientation:\s*(?:&quot;|"|')?horizontal/i.test(p)) {
+          xmin = parseFloat(mm[1]); xmax = parseFloat(mm[2]);
+        } else if (/orientation:\s*(?:&quot;|"|')?vertical/i.test(p)) {
+          ymin = parseFloat(mm[1]); ymax = parseFloat(mm[2]);
+        }
+      }
+      let x0 = gr.left + 18, x1 = gr.right - 18;
+      let y0 = gr.top + 20, y1 = gr.bottom - 20;
+      for (const ln of [...gEl.querySelectorAll('line')]) {
+        const rr = ln.getBoundingClientRect();
+        if (rr.width > 200 && rr.height < 2) { x0 = rr.left; x1 = rr.right; }
+        if (rr.width < 2 && rr.height > 150) { y0 = rr.top; y1 = rr.bottom; }
+      }
+      graph = { x: gr.x, y: gr.y, w: gr.width, h: gr.height,
+                x0: x0, x1: x1, y0: y0, y1: y1,
+                xmin: xmin, xmax: xmax, ymin: ymin, ymax: ymax };
+    }
+  }
+
+  // 唯一 Check 候选：避免页面上同时存在旧 Check/新 Check 时点错。
+  // 只认可见、且文字/aria-label/title 精确等于 Pearson 的三种 Check 文案。
+  const checkCandidates = [...document.querySelectorAll(
+      'button, input[type=submit], input[type=button], [role="button"]')]
+    .filter(vis)
+    .map((el) => {
+      const labels = [el.innerText, el.value,
+                      el.getAttribute?.('aria-label'), el.getAttribute?.('title')]
+        .map((x) => clean(x || '').replace(/\s+/g, ' ')).filter(Boolean);
+      const hit = labels.find((x) => /^(?:check answer|check my answer|final check)$/i.test(x));
+      if (!hit) return null;
+      return {
+        id: el.id, uid: uidOf(el),
+        enabled: !el.disabled && el.getAttribute('aria-disabled') !== 'true',
+        label: hit.slice(0, 80),
+      };
+    })
+    .filter(Boolean);
+
+  // 题目身份 / 字段身份：供 app.pyw 在“模型思考期间页面换题”时丢弃旧答案。
+  const identity = clean((document.querySelector('.playerViewer h3') || {}).innerText || '');
+  const problemKey = [identity, text.slice(0, 800)].join('|');
+  const signature = JSON.stringify([
+    identity,
+    text.slice(0, 1200),
+    fields.map((f) => [f.uid, f.id, f.label, !!f.disabled]),
+    radios.map((r) => [r.uid, r.id, r.label, !!r.checked]),
+    checks.map((c) => [c.uid, c.id, c.label, !!c.checked]),
+    inputs.map((i) => [i.uid, i.id, i.label, i.value || '', !!i.disabled]),
+    selects.map((s) => [s.uid, s.id, s.value, s.options]),
+    dropdowns.map((d) => [d.uid, d.id, d.label]),
+  ]);
+
+  const checkUnique = checkCandidates.length === 1 && checkCandidates[0].enabled;
   return { text: text, qkey: qkey, rect: qrect, part: [partN, partM], fields: fields, radios: radios,
-           dropdowns: dropdowns,
+           dropdowns: dropdowns, questions: questions, qno: qno, graph: graph,
            radios_disabled: radiosDisabled, inputs: inputs,
            checks: checks, selects: selects, imgs: imgs,
-           hasCheck: btn(/^(check answer|final check)$/i), hasNext: btn(/^(next|next question)$/i),
+           identity: identity, problemKey: problemKey, signature: signature,
+           inventory: inventory, incomplete: incomplete,
+           checkCandidates: checkCandidates,
+           hasCheck: checkCandidates.length > 0 || btn(/^(check answer|final check)$/i),
+           canCheck: checkUnique,
+           hasNext: btn(/^(next|next question)$/i),
            inDialog: !!dlg };
+})()
+"""
+
+_PALETTE_CLICK_JS = r"""
+(() => {
+  const vis = (e) => { if (!e) return false; const r = e.getBoundingClientRect();
+                       return r.width > 2 && r.height > 2; };
+  let pals = [...document.querySelectorAll('div.xlInlineMathPalette')].filter(vis);
+  if (!pals.length) {
+    // 有的题目输入框弹出的是底部宽键盘面板（xlKeyboardDialog），不是内联调色板
+    pals = [...document.querySelectorAll(
+        'div.xlKeyboardDialog, [class*=KeyboardDialog], [data-dojo-attach-point="paletteNode"]')]
+      .filter((p) => vis(p) && p.querySelector('button'));
+  }
+  if (!pals.length) return 'no-palette';
+  const field = document.getElementById(%s);
+  let pal = pals[pals.length - 1];
+  if (field) {
+    // 多空题每个空各挂一个调色板：取离目标输入框最近的那个
+    const fr = field.getBoundingClientRect();
+    let bd = 1e9;
+    for (const p of pals) {
+      const r = p.getBoundingClientRect();
+      const d = Math.abs(r.top - fr.top) + Math.abs(r.left - fr.left);
+      if (d < bd) { bd = d; pal = p; }
+    }
+  }
+  const classes = %s;
+  const titleRe = new RegExp(%s || '(?!)', 'i');
+  const buttons = () => [...pal.querySelectorAll('button')].filter(vis);
+  const labelsOf = (b) => [(b.getAttribute('title') || '').trim(),
+                           (b.getAttribute('aria-label') || '').trim(),
+                           (b.textContent || '').trim()];
+  const matches = (b) => {
+    const cls = String(b.className || '').split(/\s+/);
+    if (classes.some((c) => cls.indexOf(c) >= 0)) return true;
+    return labelsOf(b).some((t) => t && titleRe.test(t));
+  };
+  const btn = buttons().find(matches);
+  if (btn) { btn.click(); return 'ok'; }
+  if (%s) {
+    const more = buttons().find((b) => labelsOf(b).some((t) => /more|更多/i.test(t)));
+    if (more) { more.click(); return 'more-opened'; }
+    // 已经停在第二页时，工具不在这一页就得点 Less 回第一页再找一次
+    const less = buttons().find((b) => labelsOf(b).some((t) => /^(less|back)$/i.test(t)));
+    if (less) { less.click(); return 'less-opened'; }
+    return 'no-tool';
+  }
+  return 'no-tool';
+})()
+"""
+
+
+
+_PLAYER_STATE_JS = r"""
+(() => {
+  const out = {ok: false, correctness: null, feedbackOpen: false, resultPosted: 0,
+               controls: 0, answered: 0, correct: 0, partial: 0, error: ''};
+  try {
+    // 真实 Pearson 不保证有全局 dijit；它通常暴露 AMD require。
+    // 先用已缓存的 registry；没有就异步加载一次并缓存，下一次调用即可用。
+    let d = window.dijit || window.__schDijitRegistry;
+    if (!d && typeof window.require === 'function'
+            && !window.__schDijitLoading && !window.__schDijitError) {
+      window.__schDijitLoading = true;
+      try {
+        window.require(['dijit/registry'], (registry) => {
+          window.__schDijitRegistry = registry;
+          window.__schDijitLoading = false;
+        }, (err) => {
+          window.__schDijitLoading = false;
+          window.__schDijitError = String((err && err.message) || err || 'require failed');
+        });
+      } catch (e) {
+        window.__schDijitLoading = false;
+        window.__schDijitError = String((e && e.message) || e);
+      }
+    }
+    if (!d) {
+      out.error = window.__schDijitError || (window.__schDijitLoading ? 'loading' : 'no-dijit');
+      return out;
+    }
+    const byNode = (el) => {
+      try {
+        if (typeof d.byNode === 'function') return d.byNode(el);
+        if (typeof d.getEnclosingWidget === 'function') return d.getEnclosingWidget(el);
+        if (typeof d.byId === 'function' && el && el.id) return d.byId(el.id);
+        if (el && el.__widget) return el.__widget;
+      } catch (e) {}
+      return null;
+    };
+    const pvEl = document.querySelector('.playerViewer');
+    const pv = pvEl ? byNode(pvEl) : null;
+    if (pv) {
+      if (pv._correctness !== undefined && pv._correctness !== null) {
+        out.correctness = pv._correctness;
+      } else if (pv.correctness !== undefined && pv.correctness !== null) {
+        out.correctness = pv.correctness;
+      }
+      out.feedbackOpen = !!(pv.feedbackOpened || pv.feedbackOpen);
+      const rp = pv.resultsposted;
+      out.resultPosted = (typeof rp === 'number') ? rp : (rp ? 1 : 0);
+    }
+    const controls = [...document.querySelectorAll('.inputField, .xlMultipleChoice')];
+    out.controls = controls.length;
+    for (const el of controls) {
+      const w = byNode(el);
+      if (!w) continue;
+      if (w.isAnswered) out.answered++;
+      if (w.isCorrect === true) out.correct++;
+      if (w.isCorrect === 'partial' || w.isCorrect === 'partially') out.partial++;
+      const states = w.answeredStates;
+      if (states && typeof states === 'object') {
+        try {
+          const vals = Array.isArray(states) ? states : Object.values(states);
+          for (const v of vals) {
+            if (v === true || v === 'correct' || v === 'Correct') out.correct++;
+            if (v === 'partial' || v === 'Partial' ||
+                v === 'partially correct' || v === 'Partially correct') out.partial++;
+          }
+        } catch (e) {}
+      }
+    }
+    out.ok = true;
+    return out;
+  } catch (e) {
+    out.error = String((e && e.message) || e);
+    return out;
+  }
+})()
+"""
+
+_MATH_JS = r"""
+(() => {
+  const clean = (s) => (s || '').replace(/\s+/g, ' ').trim();
+  const vis = (el) => {
+    if (!el || !el.getBoundingClientRect) return false;
+    const r = el.getBoundingClientRect();
+    return r.width > 0 && r.height > 0;
+  };
+  const scope = document.getElementById('contentHoldertop')
+             || document.getElementById('contentHolderbottom') || document.body;
+  const out = [], seen = new Set();
+  const add = (s) => {
+    s = clean(s);
+    if (!s || s.length > 500 || seen.has(s)) return;
+    seen.add(s); out.push(s);
+  };
+  for (const el of scope.querySelectorAll('math, mjx-container, .MathJax, .katex, [data-latex], annotation[encoding*="tex" i]')) {
+    if (!vis(el)) continue;
+    add(el.getAttribute('data-latex') || el.getAttribute('aria-label')
+        || el.getAttribute('alt') || el.textContent || '');
+  }
+  return out.slice(0, 20);
+})()
+"""
+
+_COMPLETION_JS = r"""
+(() => {
+  const vis = (e) => { const r = e.getBoundingClientRect(); return r.width > 2 && r.height > 2; };
+  const clean = (s) => (s || '').replace(/\u200b/g, '').replace(/\s+/g, ' ').trim();
+  const good = /\b(well done|good job|good work|nice job|fantastic|correct|great job|nice work|excellent|way to go|perfect|that'?s right|right answer|you got it)\b/i;
+  const bad = /\b(incorrect|not quite|not correct|try again|not right|sorry|almost|check your work)\b/i;
+  const finished = /\b(homework (is )?complete|you have completed|assignment complete|all done)\b/i;
+  const leave = /(leave this question|not completed this question|continue without checking|are you sure you want to (leave|continue))/i;
+
+  const cands = [...document.querySelectorAll(
+      '[role=dialog], [id*=Dialog], [class*=Dialog], [class*=feedback], ' +
+      '[class*=Feedback], [id*=Popup], [class*=Popup]')]
+    .filter(vis)
+    .map((el) => {
+      const text = clean(el.innerText);
+      const buttons = [...el.querySelectorAll('button, a, [role=button]')]
+        .filter(vis).map((b) => ({
+          id: b.id || '',
+          text: clean(b.innerText || b.getAttribute('aria-label') || b.getAttribute('title')),
+          disabled: !!(b.disabled || b.getAttribute('aria-disabled') === 'true'),
+        })).filter((b) => b.text);
+      return { id: el.id || '', text, buttons };
+    })
+    .filter((c) => c.text && c.text.length <= 800 && c.buttons.length);
+
+  const kindOf = (t) => {
+    if (leave.test(t)) return 'leave';
+    if (bad.test(t)) return 'incorrect';
+    if (finished.test(t)) return 'finished';
+    if (good.test(t)) return 'correct';
+    return '';
+  };
+  const ranked = cands.map((c) => ({ ...c, kind: kindOf(c.text) }))
+    .filter((c) => c.kind)
+    .map((c, i) => ({ ...c, i }));
+  // 最后一个（最上层）优先
+  const hit = ranked.length ? ranked[ranked.length - 1] : null;
+
+  const btnText = (b) => (b.text || '').trim();
+  const okBtn = hit ? hit.buttons.find((b) => /^(ok|continue|got it|close|dismiss)$/i.test(btnText(b))) : null;
+  const nextBtn = hit ? hit.buttons.find((b) => /^(next( question)?|go to next.*)$/i.test(btnText(b))) : null;
+
+  const btnInfo = (re) => [...document.querySelectorAll('button')].filter(vis).map((b) => ({
+    id: b.id || '',
+    text: clean(b.innerText || b.getAttribute('aria-label') || b.getAttribute('title')),
+    disabled: !!(b.disabled || b.getAttribute('aria-disabled') === 'true'),
+  })).find((b) => re.test(b.text));
+  const check = btnInfo(/^(check answer|final check)$/i);
+  const next = btnInfo(/^(next|next question)$/i);
+
+  return {
+    kind: hit ? hit.kind : 'none',
+    text: hit ? hit.text : '',
+    dialogId: hit ? hit.id : '',
+    hasOk: !!okBtn,
+    hasNext: !!nextBtn,
+    okId: okBtn ? okBtn.id : '',
+    nextId: nextBtn ? nextBtn.id : '',
+    buttons: hit ? hit.buttons : [],
+    checkVisible: !!check,
+    checkEnabled: !!(check && !check.disabled),
+    nextVisible: !!next,
+  };
 })()
 """
 
 _FEEDBACK_JS = r"""
 (() => {
   const vis = (e) => { const r = e.getBoundingClientRect(); return r.width > 2 && r.height > 2; };
-  const good = /\b(well done|fantastic|correct|great|nice work|excellent|way to go|perfect|that'?s right|right answer|you got it)\b/i;
+  const good = /\b(well done|good job|good work|nice job|fantastic|correct|great|nice work|excellent|way to go|perfect|that'?s right|right answer|you got it)\b/i;
   const bad = /\b(incorrect|not quite|try again|not right|sorry|almost|check your work|no\.)\b/i;
   const cands = [...document.querySelectorAll('[role=dialog], [id*=Dialog], [class*=feedback]')]
       .filter(vis);
@@ -315,6 +699,21 @@ class WebPlayer:
         self.ws.call("Runtime.enable")
         self.title = page.get("title", "")
         self.ctx = None
+        self.player_frame = ""
+        try:
+            tree = self.ws.call("Page.getFrameTree")["frameTree"]
+
+            def walk(node):
+                f = node["frame"]
+                if "Player/Player.aspx" in (f.get("url") or ""):
+                    self.player_frame = f["id"]
+                for c in node.get("childFrames", []):
+                    walk(c)
+
+            walk(tree)
+        except Exception:
+            self.player_frame = ""
+        # 不再注入主世界 Agent：全部操作走隔离世界 DOM 与一次性主世界求值。
         self.log(f"已连接：{self.title[:60] or page.get('url', '')[:60]}")
         return self
 
@@ -368,12 +767,469 @@ class WebPlayer:
                          {"type": t, "key": k, "code": code,
                           "windowsVirtualKeyCode": vk, "modifiers": mods})
 
+    def main_context_id(self) -> int | None:
+        """Player iframe 的 main world 上下文；Dojo 全局只在这里可见。"""
+        frame = getattr(self, "player_frame", "")
+        for msg in getattr(self.ws, "events", []):
+            if msg.get("method") != "Runtime.executionContextCreated":
+                continue
+            c = msg.get("params", {}).get("context", {})
+            aux = c.get("auxData") or {}
+            if aux.get("isDefault") and (not frame or aux.get("frameId") == frame):
+                return int(c.get("id"))
+        return None
+
+    def eval_main(self, expr: str):
+        cid = self.main_context_id()
+        if cid is None:
+            return None
+        r = self.ws.call("Runtime.evaluate",
+                         {"expression": expr, "contextId": cid, "returnByValue": True})
+        if "exceptionDetails" in r:
+            raise CDPError(str(r["exceptionDetails"].get("text"))[:160])
+        return r.get("result", {}).get("value")
+
+    _GRAPH_POPUP = (
+        "(() => {const ps=[...document.querySelectorAll('[id*=GraphZoomPopup]')];"
+        "return !!ps.find(e=>{const r=e.getBoundingClientRect();"
+        "return r.width>200 && r.height>150 && getComputedStyle(e).display!=='none';});})()"
+    )
+
+    def graph_modal_open(self) -> bool:
+        try:
+            return bool(self.js(self._GRAPH_POPUP))
+        except Exception:
+            return False
+
+    def open_graph_modal(self) -> bool:
+        if self.graph_modal_open():
+            return True
+        try:
+            got = self.js(
+                "(() => {const b=[...document.querySelectorAll('button')]"
+                ".find(x => (x.innerText||'').toLowerCase().includes('enlarge'));"
+                "if (!b) return 'no'; b.click(); return 'ok';})()")
+        except Exception:
+            got = "no"
+        if got != "ok":
+            return False
+        for _ in range(8):
+            time.sleep(0.35)
+            if self.graph_modal_open():
+                return True
+        return False
+
+    def draw_quadratic(self, points: list[tuple[float, float]]) -> str:
+        """在放大图形框里用 Dojo GraphControl API 画二次函数。"""
+        if not self.open_graph_modal():
+            return "no-modal"
+        pts = [[float(x), float(y)] for x, y in points]
+        js = """(() => {
+  const ps = [...document.querySelectorAll('[id*=GraphZoomPopup]')];
+  const pop = ps.find(e => {const r=e.getBoundingClientRect();
+      return r.width>200 && r.height>150 && getComputedStyle(e).display!=='none'
+             && e.querySelector('.xygraph');});
+  if (!pop) return 'no-popup';
+  const el = pop.querySelector('.xygraph');
+  if (!el) return 'no-graph';
+  const gw = dijit.byId(el.id);
+  if (!gw) return 'no-widget';
+  const ctl = gw._graphControl;
+  const m = ctl.getGraphManager();
+  try { m.clearGraphObjects(); } catch (e) {}
+  ctl._paletteToolSelected({cmd: 'quadratic'});
+  const t = m.getCurrentTool();
+  if (!t) return 'no-tool';
+  const pts = %s;
+  for (const p of pts) t.addPoint({x: p[0], y: p[1]});
+  m.completeTool();
+  ctl.getGraph().validateGraph();
+  return 'ok';
+})()""" % json.dumps(pts)
+        try:
+            got = self.eval_main(js)
+        except Exception:
+            return "draw-error"
+        if got != "ok":
+            return str(got or "draw-failed")
+        # 点放大框自己的 Save（不要点页面顶部那个 Save）
+        try:
+            saved = self.eval_main(
+                "(() => {const ps=[...document.querySelectorAll('[id*=GraphZoomPopup]')];"
+                "const pop=ps.find(e=>{const r=e.getBoundingClientRect();"
+                "return r.width>200&&r.height>150&&getComputedStyle(e).display!=='none'"
+                "&&e.querySelector('.xygraph');});"
+                "if(!pop)return 'no-popup';"
+                "const b=[...pop.querySelectorAll('button')]"
+                ".find(x=>(x.innerText||'').trim()==='Save');"
+                "if(!b)return 'no-save';"
+                "const w=dijit.byId(b.id);"
+                "if(w&&w.onClick)w.onClick();else b.click();"
+                "return 'ok';})()")
+        except Exception:
+            saved = "save-error"
+        time.sleep(0.8)
+        if self.graph_modal_open():
+            # 有些 Pearson 弹窗会叠多层；Save 已把图形写回，隐藏残余弹窗
+            try:
+                self.eval_main(
+                    "(() => {for(const e of [...document.querySelectorAll('[id*=GraphZoomPopup]')]){"
+                    "const w=dijit.byId(e.id);if(w&&w.hide)w.hide();}"
+                    "return 'ok';})()")
+            except Exception:
+                pass
+            time.sleep(0.5)
+        if self.graph_modal_open():
+            return "save-not-closed"
+        return str(saved or "saved")
+
+    def add_graph_objects(self, objects: list[dict]) -> str:
+        """在放大图形框里直接写入多个 GraphControl 对象（line/quadratic）。"""
+        if not self.open_graph_modal():
+            return "no-modal"
+        js = """(() => {
+  const ps = [...document.querySelectorAll('[id*=GraphZoomPopup]')];
+  const pop = ps.find(e => {const r=e.getBoundingClientRect();
+      return r.width>200 && r.height>150 && getComputedStyle(e).display!=='none'
+             && e.querySelector('.xygraph');});
+  if (!pop) return 'no-popup';
+  const el = pop.querySelector('.xygraph');
+  const gw = dijit.byId(el.id);
+  if (!gw) return 'no-widget';
+  const ctl = gw._graphControl;
+  const m = ctl.getGraphManager();
+  m.clearGraphObjects();
+  m.initGraphObjects(%s, -1);
+  ctl.getGraph().validateGraph();
+  return 'ok';
+})()""" % json.dumps(objects)
+        try:
+            got = self.eval_main(js)
+        except Exception:
+            return "draw-error"
+        if got != "ok":
+            return str(got or "draw-failed")
+        try:
+            saved = self.eval_main(
+                "(() => {const ps=[...document.querySelectorAll('[id*=GraphZoomPopup]')];"
+                "const pop=ps.find(e=>{const r=e.getBoundingClientRect();"
+                "return r.width>200&&r.height>150&&getComputedStyle(e).display!=='none'"
+                "&&e.querySelector('.xygraph');});"
+                "if(!pop)return 'no-popup';"
+                "const b=[...pop.querySelectorAll('button')]"
+                ".find(x=>(x.innerText||'').trim()==='Save');"
+                "if(!b)return 'no-save';"
+                "const w=dijit.byId(b.id);"
+                "if(w&&w.onClick)w.onClick();else b.click();"
+                "return 'ok';})()")
+        except Exception:
+            saved = "save-error"
+        time.sleep(0.8)
+        if self.graph_modal_open():
+            try:
+                self.eval_main(
+                    "(() => {for(const e of [...document.querySelectorAll('[id*=GraphZoomPopup]')]){"
+                    "const w=dijit.byId(e.id);if(w&&w.hide)w.hide();}return 'ok';})()")
+            except Exception:
+                pass
+            time.sleep(0.5)
+        if self.graph_modal_open():
+            return "save-not-closed"
+        return str(saved or "saved")
+
+    def add_graph_objects_inline(self, objects: list[dict]) -> str:
+        """优先操作页面内嵌图（不进放大弹窗）。只写入图形模型，不点页面顶部 Save。"""
+        js = """(() => {
+  const el = document.querySelector('.graphControl .xygraph') ||
+             document.querySelector('.xygraph');
+  if (!el) return 'no-inline';
+  const gw = dijit.byId(el.id);
+  if (!gw || !gw._graphControl) return 'no-widget';
+  const ctl = gw._graphControl;
+  const m = ctl.getGraphManager();
+  try { m.clearGraphObjects(); } catch (e) {}
+  m.initGraphObjects(%s, -1);
+  ctl.getGraph().validateGraph();
+  return 'ok';
+})()""" % json.dumps(objects)
+        try:
+            got = self.eval_main(js)
+        except Exception:
+            got = "error"
+        if got != "ok":
+            return str(got or "inline-failed")
+        time.sleep(0.5)
+        return "ok"
+
     # ---- 读
     def state(self) -> dict:
+        try:
+            v = self.eval_main(_STATE_JS)
+            if isinstance(v, dict) and (v.get("questions") or v.get("text")):
+                return v
+        except Exception:
+            pass
         return self.js(_STATE_JS) or {}
 
+    def player_state(self) -> dict:
+        """读 Pearson Dojo player 的内部判分状态（学自 study-assistant player-bridge）。
+
+        `_correctness` / `feedbackOpened` / 控件 widget 的 isAnswered/isCorrect
+        比纯 DOM 文本稳定；拿不到 Dojo 时返回 ok=False，调用方回退 DOM。
+        """
+        last = None
+        for _ in range(4):
+            try:
+                v = self.eval_main(_PLAYER_STATE_JS)
+                if isinstance(v, dict):
+                    last = v
+                    if v.get("ok"):
+                        return v
+                    # AMD registry 首次加载是异步的；只对 loading 稍等，
+                    # no-dijit/require 失败则立即回退，不拖慢主流程。
+                    if str(v.get("error") or "") != "loading":
+                        return v
+            except Exception:
+                pass
+            time.sleep(0.35)
+        if last:
+            return last
+        return {"ok": False, "correctness": None, "feedbackOpen": False,
+                "resultPosted": 0, "controls": 0, "answered": 0,
+                "correct": 0, "partial": 0, "error": "exception"}
+
+    def check_state(self) -> dict:
+        """当前可见 Check 按钮的唯一性/可用性（用于避免点到旧 Check）。"""
+        try:
+            st = self.state() or {}
+            cands = [c for c in (st.get("checkCandidates") or []) if isinstance(c, dict)]
+            enabled = [c for c in cands if c.get("enabled")]
+            return {"count": len(cands), "enabled": len(enabled),
+                    "ok": len(cands) == 1 and len(enabled) == 1,
+                    "candidates": cands}
+        except Exception:
+            return {"count": 0, "enabled": 0, "ok": False, "candidates": []}
+
+    def click_check_unique(self) -> str:
+        """唯一 Check 才点；0 个/多个/禁用都返回原因，绝不盲点。"""
+        cs = self.check_state()
+        n = int(cs.get("count") or 0)
+        if n == 0:
+            return "none"
+        if n > 1:
+            return "multiple"
+        c = (cs.get("candidates") or [{}])[0]
+        if not c.get("enabled"):
+            return "disabled"
+        uid = str(c.get("uid") or "")
+        cid = str(c.get("id") or "")
+        expr = ("document.querySelector('[data-sch-uid=%s]')" % json.dumps(uid)) \
+            if uid else ("document.getElementById(%s)" % json.dumps(cid))
+        try:
+            res = self.js(_CLICK_JS % expr)
+            if res == "ok":
+                time.sleep(0.45)
+                return "ok"
+            return str(res or "no")
+        except Exception:
+            return "no"
+
+    def field_present(self, uid: str) -> bool:
+        """校验字段 UID 是否仍存在于当前页面（防止旧快照填新页面）。"""
+        uid = str(uid or "")
+        if not uid:
+            return False
+        js = """(() => {
+  const uid = %s;
+  const el = document.querySelector('[data-sch-uid="' + uid + '"]');
+  if (!el) return false;
+  // 同一 UID 必须还是快照时记住的那个 element。Pearson 有时会重建 DOM
+  // 但保留旧属性；只查 UID 会把“新控件”误当成“旧控件”。
+  try {
+    const mem = window.__schElements;
+    if (mem && mem.size && mem.get(uid) !== el) return false;
+  } catch (e) {}
+  const r = el.getBoundingClientRect();
+  if (r.width <= 1 || r.height <= 1) return false;
+  const cs = getComputedStyle(el);
+  return cs.display !== 'none' && cs.visibility !== 'hidden';
+})()""" % json.dumps(uid)
+        try:
+            # __schElements 建在主世界，必须用 eval_main 才能看到。
+            return bool(self.eval_main(js))
+        except Exception:
+            try:
+                return bool(self.js(js))
+            except Exception:
+                return False
+
+    def math_text(self) -> list:
+        """从 MathML/KaTeX/MathJax/data-latex 提取公式文本（学自 Auto-Pearson math.js）。"""
+        try:
+            v = self.js(_MATH_JS)
+            return [str(x) for x in (v or []) if str(x).strip()][:20]
+        except Exception:
+            return []
+
+    def completion_state(self) -> dict:
+        """返回当前判分/警告弹窗的结构化状态（学自 Auto-Pearson completionState）。
+
+        - kind: correct / incorrect / finished / leave / none
+        - hasOk / hasNext: 只统计**这个弹窗内部**的按钮
+        - checkVisible / checkEnabled: 页面上的 Check 按钮状态
+        """
+        try:
+            v = self.js(_COMPLETION_JS)
+            if isinstance(v, dict):
+                return v
+        except Exception:
+            pass
+        return {"kind": "none", "hasOk": False, "hasNext": False,
+                "checkVisible": False, "checkEnabled": False}
+
     def feedback(self) -> str:
-        return self.js(_FEEDBACK_JS) or ""
+        """判分结果。兼容旧接口：correct / incorrect / ''。"""
+        st = self.completion_state()
+        kind = str(st.get("kind") or "")
+        if kind in ("correct", "finished"):
+            return "correct"
+        if kind == "incorrect":
+            return "incorrect"
+        try:
+            return self.js(_FEEDBACK_JS) or ""
+        except Exception:
+            return ""
+
+    def click_completion(self, action: str = "ok") -> str:
+        """只点当前反馈弹窗内部的 OK/Next，绝不点弹窗后面的旧按钮。"""
+        st = self.completion_state()
+        if not st or st.get("kind") in ("", "none"):
+            return "no"
+        bid = st.get("nextId") if action == "next" else st.get("okId")
+        if bid:
+            try:
+                return self.js(_CLICK_JS % ("document.getElementById(%s) || null"
+                                            % json.dumps(str(bid)))) or "no"
+            except Exception:
+                return "no"
+        # 没有 id 时退回文字查找；再次确认弹窗仍在，避免点到旧 Check
+        pattern = r"^next( question)?$" if action == "next" else \
+            r"^(ok|continue|got it|close|dismiss)$"
+        try:
+            if action == "next" and not st.get("hasNext"):
+                return "no"
+            if action != "next" and not st.get("hasOk"):
+                return "no"
+            return self.click_text(pattern)
+        except Exception:
+            return "no"
+
+    def _force_hide_dialog(self, dialog_id: str) -> str:
+        """兜底：Pearson 的 FeedbackMessage 有时已把页面推进到下一小问，
+        但弹窗 DOM 没消失（Dojo widget.open 已是 false）。这时只隐藏这个
+        残留节点，不点弹窗后面的旧 Check/Next。"""
+        if not dialog_id:
+            return "no"
+        js = """(() => {
+  const id = %s;
+  for (const el of [document.getElementById(id),
+                    document.getElementById(id + '_underlay')]) {
+    if (el) { el.style.display = 'none'; el.setAttribute('aria-hidden', 'true'); }
+  }
+  return 'hidden';
+})()""" % json.dumps(dialog_id)
+        try:
+            return self.js(js) or "no"
+        except Exception:
+            return "no"
+
+    def _feedback_widget_open(self, dialog_id: str):
+        """返回 Dojo FeedbackMessage widget 的 open 状态；拿不到返回 None。"""
+        if not dialog_id:
+            return None
+        js = """(() => {
+  if (!window.dijit || !dijit.byId) return null;
+  const w = dijit.byId(%s);
+  return w ? !!w.open : null;
+})()""" % json.dumps(dialog_id)
+        try:
+            return self.eval_main(js)
+        except Exception:
+            return None
+
+    def dismiss_feedback(self) -> str:
+        """关闭当前判分弹窗（只点弹窗内 OK）；处理 Pearson 的残留弹窗。"""
+        st = self.completion_state()
+        did = str(st.get("dialogId") or "")
+        res = self.click_completion("ok")
+        if not did:
+            return res
+        # 正常情况：点 OK 后弹窗消失/页面换题
+        for _ in range(10):
+            time.sleep(0.2)
+            cur = self.completion_state()
+            if cur.get("kind") in ("", "none") or cur.get("dialogId") != did:
+                return res
+        # 异常：DOM 还显示，但 Dojo 已经认为它关闭了（Pearson 偶发）
+        if self._feedback_widget_open(did) is False:
+            self._force_hide_dialog(did)
+            return "ok-stale"
+        return res
+
+    def goto_question(self, n: int) -> str:
+        """点左侧题号，跳到指定 Question（不依赖 Next 按钮）。"""
+        js = r"""(() => {
+  const a = [...document.querySelectorAll('a.questionLabel')]
+      .find(x => /^Question\s+%d$/i.test((x.innerText || '').trim()));
+  if (!a) return 'no';
+  a.scrollIntoView({block: 'center'});
+  a.click();
+  return 'ok';
+})()""" % int(n)
+        for _ in range(2):
+            try:
+                if self.js(js) == "ok":
+                    return "ok"
+            except Exception:
+                pass
+            time.sleep(0.35)
+        return "no"
+
+    def click_graph_tool(self, title: str) -> str:
+        js = """(() => {
+  const b = [...document.querySelectorAll('button')].find(
+      x => (x.getAttribute('title') || '').trim() === %s);
+  if (!b) return 'no';
+  b.click();
+  return 'ok';
+})()""" % json.dumps(title)
+        try:
+            return self.js(js) or "no"
+        except Exception:
+            return "no"
+
+    def click_graph_at(self, page_x: float, page_y: float) -> None:
+        for typ in ("mousePressed", "mouseReleased"):
+            self.ws.call("Input.dispatchMouseEvent",
+                         {"type": typ, "x": page_x, "y": page_y,
+                          "button": "left", "clickCount": 1},
+                         timeout=10)
+
+    def graph_point(self, x: float, y: float) -> bool:
+        """按数学坐标点一下图形区。"""
+        st = self.state() or {}
+        g = st.get("graph") or {}
+        try:
+            x0, x1 = float(g["x0"]), float(g["x1"])
+            y0, y1 = float(g["y0"]), float(g["y1"])
+            xmin, xmax = float(g["xmin"]), float(g["xmax"])
+            ymin, ymax = float(g["ymin"]), float(g["ymax"])
+        except Exception:
+            return False
+        px = x0 + (float(x) - xmin) / (xmax - xmin) * (x1 - x0)
+        py = y1 - (float(y) - ymin) / (ymax - ymin) * (y1 - y0)
+        self.click_graph_at(px, py)
+        return True
 
     # ---- 写
     def _click_rid(self, rid: str, expect_checked: bool = True) -> str:
@@ -391,9 +1247,15 @@ class WebPlayer:
                 return "ok"
         return "not-checked"
 
-    def pick_choice(self, letter: str, multi: bool = False) -> str:
-        letter = (letter or "").strip().upper()[:1]
-        if not letter:
+    def pick_choice(self, value: str, multi: bool = False) -> str:
+        """按模型答案选一个选项。
+
+        ``value`` 可以是 ``B``、``B. 90%``、``Option B: 90%``，也可以是完整选项
+        文本。匹配不到或存在歧义时直接返回错误，不按位置瞎点——这是从
+        Auto-Pearson 的 choiceIndex 学来的关键保护。
+        """
+        value = (value or "").strip()
+        if not value:
             return "no-letter"
         st = self.state()
         radios = st.get("radios", [])
@@ -402,16 +1264,11 @@ class WebPlayer:
         pool = (checks or radios) if multi else (radios or checks)
         if not pool:
             return "no-match"
-        cand = [r for r in pool
-                if (r.get("label") or "").strip().upper().startswith(letter)]
-        if not cand:
-            # 选项本身没有字母（如 No / Yes），按 A/B/C 顺序取
-            idx = ord(letter) - ord("A")
-            if 0 <= idx < len(pool):
-                cand = [pool[idx]]
-        if not cand:
-            return "no-match"
-        target = cand[0]
+        labels = [str(r.get("label") or "") for r in pool]
+        m = match_choice(value, labels)
+        if not m.ok:
+            return "ambiguous" if m.ambiguous else "no-match"
+        target = pool[int(m.index)]
         if target.get("disabled"):
             return "disabled"
         if target.get("checked"):
@@ -432,8 +1289,81 @@ class WebPlayer:
             time.sleep(0.25)
         return "ok" if not bad else "fail:" + ",".join(bad)
 
+    def leave_state(self) -> dict:
+        """精确识别 Pearson 的两类“离开未完成题”警告。
+
+        返回 ``kind``：``unchecked``（答案还没检查）/ ``incomplete``（小题没做完）
+        / ``leave``（其它离开确认）/ 空字符串。默认调用方应点 No；只有已经把
+        跳过写入 skip ledger 才允许 Yes。
+        """
+        out = {"visible": False, "kind": "", "dialog_id": "", "text": "",
+               "yes_count": 0, "no_count": 0, "yes_id": "", "no_id": ""}
+        try:
+            cs = self.completion_state()
+        except Exception:
+            return out
+        if str(cs.get("kind") or "") != "leave":
+            return out
+        text = str(cs.get("text") or "")
+        low = text.lower()
+        if ("without checking" in low or "will not receive any credit" in low
+                or "answer has not been checked" in low):
+            kind = "unchecked"
+        elif ("not completed this question" in low
+              or "credit only for the work you" in low):
+            kind = "incomplete"
+        else:
+            kind = "leave"
+        yes = [b for b in cs.get("buttons", [])
+               if re.fullmatch(r"yes", str(b.get("text") or "").strip(), re.I)]
+        no = [b for b in cs.get("buttons", [])
+              if re.fullmatch(r"no", str(b.get("text") or "").strip(), re.I)]
+        out.update({"visible": True, "kind": kind,
+                    "dialog_id": str(cs.get("dialogId") or ""), "text": text,
+                    "yes_count": len(yes), "no_count": len(no),
+                    "yes_id": str(yes[0].get("id") or "") if len(yes) == 1 else "",
+                    "no_id": str(no[0].get("id") or "") if len(no) == 1 else ""})
+        return out
+
+    def click_leave(self, choice: str = "no") -> str:
+        """点离开警告内部的 Yes/No，且必须唯一。
+
+        绝不在页面上按文字乱点：只在当前可见的 leave dialog 内部找按钮。
+        """
+        want = "yes" if str(choice).lower().startswith("y") else "no"
+        js = r"""
+(() => {
+  const want = %s;
+  const vis = (e) => { const r = e.getBoundingClientRect(); return r.width > 2 && r.height > 2; };
+  const clean = (s) => (s || '').replace(/\u200b/g, '').replace(/\s+/g, ' ').trim();
+  const leaveRe = /(leave this question|not completed this question|continue without checking|are you sure you want to (leave|continue))/i;
+  const dlgs = [...document.querySelectorAll(
+      '[role=dialog], [id*=Dialog], [class*=Dialog], [id*=Popup], [class*=Popup]')]
+    .filter(vis)
+    .map((el) => ({el, text: clean(el.innerText)}))
+    .filter((c) => leaveRe.test(c.text))
+    .sort((a, b) => a.text.length - b.text.length);
+  if (!dlgs.length) return 'none';
+  const d = dlgs[0].el;
+  const btns = [...d.querySelectorAll('button, a, [role=button]')].filter(vis)
+    .map((b) => ({b, text: clean(b.innerText || b.getAttribute('aria-label') || b.getAttribute('title'))}));
+  const hit = btns.filter((x) => clean(x.text).toLowerCase() === want);
+  if (hit.length !== 1) return hit.length ? 'ambiguous' : 'no-button';
+  hit[0].b.click();
+  return 'ok';
+})()""" % json.dumps(want)
+        try:
+            return str(self.js(js))
+        except Exception:
+            return "error"
+
     def leave_prompt(self) -> bool:
         """有没有「Are you sure you want to leave this question?」这种确认框。"""
+        try:
+            if self.leave_state().get("visible"):
+                return True
+        except Exception:
+            pass
         js = r"""
 (() => {
   const t = (document.body.innerText || '');
@@ -447,6 +1377,9 @@ class WebPlayer:
 
     def feedback_text(self) -> str:
         """判分弹窗里的提示文字（Try again 后面那段）。"""
+        st = self.completion_state()
+        if st.get("text"):
+            return str(st["text"])[:300]
         js = r"""
 (() => {
   const e = document.querySelector('[id*=FeedbackMessage]');
@@ -460,21 +1393,7 @@ class WebPlayer:
 
     def dialog_next(self) -> bool:
         """判分弹窗里有没有「Next question」按钮（多小问的题只有 OK）。"""
-        js = r"""
-(() => {
-  const vis = (e) => { const r = e.getBoundingClientRect(); return r.width > 2 && r.height > 2; };
-  const dlgs = [...document.querySelectorAll('[id*=Dialog], [class*=Dialog], [role=dialog], [class*=feedback]')]
-      .filter(vis);
-  const dlg = dlgs.length ? dlgs[dlgs.length - 1] : null;
-  if (!dlg) return false;
-  return [...dlg.querySelectorAll('button, a, [role=button]')].some((b) => {
-    if (!vis(b)) return false;
-    return [b.innerText, b.getAttribute('aria-label'), b.getAttribute('title')]
-      .some((x) => x && /^next( question)?$/i.test(x.trim()));
-  });
-})()
-"""
-        return bool(self.js(js))
+        return bool(self.completion_state().get("hasNext"))
 
     def select_option(self, select_id: str, text: str) -> str:
         """原生下拉框：按选项文字选中。"""
@@ -523,43 +1442,141 @@ class WebPlayer:
         self.key("a", "KeyA", 65, 2)
         self.key("Delete", "Delete", 46)
 
-    def click_text(self, pattern: str) -> str:
-        """按文字 / aria-label / title 点按钮；有弹窗时优先点弹窗里的。"""
+    def _button_expr(self, pattern: str) -> str:
+        """生成按钮查找表达式。Save 类按钮只允许点弹窗/图形框里的，绝不点页面顶部 Save。"""
         reg = "new RegExp(%s, 'i')" % json.dumps(pattern)
-        expr = ("(() => { const bs = [...document.querySelectorAll('button, a, [role=button]')]"
+        save_guard = "true" if "save" in (pattern or "").lower() else "false"
+        return ("(() => { const bs = [...document.querySelectorAll('button, a, [role=button]')]"
                 ".filter((b) => { const r = b.getBoundingClientRect();"
                 " if (!(r.width > 2 && r.height > 2)) return false;"
                 " if (b.disabled || b.getAttribute('aria-disabled') === 'true') return false;"
+                " if (" + save_guard + " && !b.closest("
+                "'[id*=Popup], [id*=Dialog], [class*=Dialog], [role=dialog]')) return false;"
                 " return [b.innerText, b.getAttribute('aria-label'), b.getAttribute('title')]"
                 ".some((x) => x && " + reg + ".test(x.trim())); });"
                 " const d = bs.filter((b) => b.closest("
                 "'[id*=Dialog], [class*=Dialog], [class*=feedback], [role=dialog]'));"
                 " return (d.length ? d : bs).pop() || null; })()")
-        return self.js(_CLICK_JS % ("(%s)" % expr))
+
+    def click_text(self, pattern: str) -> str:
+        """按文字 / aria-label / title 点按钮；有弹窗时优先点弹窗里的。"""
+        return self.js(_CLICK_JS % ("(%s)" % self._button_expr(pattern)))
+
+    def click_text_native(self, pattern: str) -> str:
+        """在隔离世界原生点击按钮；Save 类按钮同样只允许弹窗内。"""
+        expr = ("(() => { const b = %s; if (!b) return 'blocked-or-missing';"
+                " b.click(); return 'ok'; })()" % self._button_expr(pattern))
+        try:
+            return self.js(expr) or "no"
+        except Exception:
+            return "no"
+
+    # ---- 公式调色板（结构模板：矩阵 / 向量 / 分段…）
+    def palette_click(self, field_id: str = "", classes: tuple[str, ...] = (),
+                      title_re: str = "", allow_more: bool = True) -> str:
+        """在指定输入框的公式调色板里点一个结构按钮。
+
+        结构模板通常在「More」第二页（默认 hidden），直接找可见按钮会漏，
+        所以找不到时先点 More 展开，再找一次。返回 ok / no-palette /
+        no-tool / more-opened / err:…。
+        """
+        expr = _PALETTE_CLICK_JS % (
+            json.dumps(field_id or ""),
+            json.dumps(list(classes)),
+            json.dumps(title_re or ""),
+            "true" if allow_more else "false",
+        )
+        try:
+            res = str(self.js(expr) or "no")
+        except Exception as e:
+            return f"err:{e}"
+        if res in ("more-opened", "less-opened"):
+            time.sleep(0.35)
+            return self.palette_click(field_id, classes, title_re, allow_more=False)
+        return res
+
+    def close_palette(self) -> None:
+        """关掉当前公式调色板，别让它的浮层挡住下一个输入框的真实点击。"""
+        js = r"""(() => {
+  const vis = (e) => { if (!e) return false; const r = e.getBoundingClientRect();
+                       return r.width > 2 && r.height > 2; };
+  const pals = [...document.querySelectorAll('div.xlInlineMathPalette')].filter(vis);
+  for (const p of pals) {
+    const x = p.querySelector('[data-dojo-attach-point="closeButtonNode"]');
+    if (x) { try { x.click(); } catch (e) {} }
+  }
+  return 'ok';
+})()"""
+        try:
+            self.js(js)
+        except Exception:
+            pass
 
     # ---- 矩阵
-    def click_matrix(self) -> str:
+    def click_matrix(self, field_id: str = "") -> str:
+        """点开矩阵结构模板：先在当前输入框的调色板里找（必要时展开 More）。"""
+        res = self.palette_click(field_id, ("iconMatrix",), r"matrix|矩阵")
+        if res == "ok":
+            return "ok"
+        # 兼容旧页面：矩阵按钮直接在第一行
         expr = ("[...document.querySelectorAll('button.iconMatrix')]"
                 ".filter((x) => x.getBoundingClientRect().width > 0)"
                 ".sort((a, b) => (b.closest('[id*=ResizableDialog]') ? 1 : 0)"
                 " - (a.closest('[id*=ResizableDialog]') ? 1 : 0))[0]")
-        return self.js(_CLICK_JS % (f"({expr}) || null"))
+        fallback = self.js(_CLICK_JS % (f"({expr}) || null"))
+        return fallback if fallback == "ok" else res
 
     def matrix_popup(self):
+        """矩阵尺寸弹窗。不同 Pearson 版本 id 不一样，按“两个数字输入 + OK”兜底。"""
         return self.js(r"""
 (() => {
   const vis = (e) => { const r = e.getBoundingClientRect(); return r.width > 2 && r.height > 2; };
-  const pops = [...document.querySelectorAll('[id*=MatrixSizePopup]')]
-      .filter((p) => vis(p) && p.querySelectorAll('button').length >= 2);
+  const hasOk = (p) => [...p.querySelectorAll('button')]
+      .some((b) => /^ok$/i.test((b.innerText || '').trim()));
+  let pops = [...document.querySelectorAll(
+      '[id*=MatrixSizePopup], [id*=MatrixPopup], [id*=MatrixDialog]')].filter(vis);
+  if (!pops.length) {
+    pops = [...document.querySelectorAll(
+        '[role=dialog], [id*=Popup], [id*=Dialog], [class*=Popup], [class*=Dialog]')]
+      .filter((p) => vis(p) && p.querySelectorAll('input').length >= 2 && hasOk(p));
+  }
   if (!pops.length) return null;
   const pop = pops[pops.length - 1];
-  const spins = [...pop.querySelectorAll('input')].filter((i) => /NumberSpinner/.test(i.id));
+  let inputs = [...pop.querySelectorAll('input')];
+  const spins = inputs.filter((i) => /spinner/i.test((i.id || '') + ' ' + (i.className || '')));
+  if (spins.length >= 2) inputs = spins;
   const ok = [...pop.querySelectorAll('button')]
-      .find((b) => (b.innerText || '').trim().toUpperCase() === 'OK');
-  return { id: pop.id, spins: spins.map((s) => s.id), ok: ok ? ok.id : '',
-           rows: spins[0] ? spins[0].value : '', cols: spins[1] ? spins[1].value : '' };
+      .find((b) => /^ok$/i.test((b.innerText || '').trim()));
+  return { id: pop.id || '', spins: inputs.slice(0, 2).map((s) => s.id),
+           ok: ok ? (ok.id || '') : '', has_ok: !!ok,
+           rows: inputs[0] ? inputs[0].value : '', cols: inputs[1] ? inputs[1].value : '' };
 })()
 """)
+
+    def _click_matrix_ok(self) -> str:
+        """没有 id 时，在矩阵弹窗内部按文字点 OK（别点到页面其它 OK）。"""
+        js = r"""(() => {
+  const vis = (e) => { const r = e.getBoundingClientRect(); return r.width > 2 && r.height > 2; };
+  const hasOk = (p) => [...p.querySelectorAll('button')]
+      .some((b) => /^ok$/i.test((b.innerText || '').trim()));
+  let pops = [...document.querySelectorAll(
+      '[id*=MatrixSizePopup], [id*=MatrixPopup], [id*=MatrixDialog]')].filter(vis);
+  if (!pops.length) {
+    pops = [...document.querySelectorAll(
+        '[role=dialog], [id*=Popup], [id*=Dialog], [class*=Popup], [class*=Dialog]')]
+      .filter((p) => vis(p) && p.querySelectorAll('input').length >= 2 && hasOk(p));
+  }
+  if (!pops.length) return 'no';
+  const ok = [...pops[pops.length - 1].querySelectorAll('button')]
+    .find((b) => /^ok$/i.test((b.innerText || '').trim()));
+  if (!ok) return 'no-ok';
+  ok.click();
+  return 'ok';
+})()"""
+        try:
+            return str(self.js(js) or "no")
+        except Exception:
+            return "no"
 
     def set_spinner(self, spinner_id: str, value: int) -> bool:
         sid = json.dumps(spinner_id)
@@ -597,25 +1614,49 @@ class WebPlayer:
     def cell_ids(self, field_id: str) -> int:
         return self.js("[...document.querySelectorAll('#%s table.eqMatrix td')].length" % field_id) or 0
 
+    def _set_input_value(self, input_id: str, value: int) -> bool:
+        """兜底：直接改输入框的值并派发 input/change，兼容不同版本的 spinner。"""
+        if not input_id:
+            return False
+        try:
+            got = self.js(
+                "(() => { const i = document.getElementById(%s); if (!i) return null;"
+                " i.value = %s; i.setAttribute('aria-valuenow', %s);"
+                " i.dispatchEvent(new Event('input', {bubbles:true}));"
+                " i.dispatchEvent(new Event('change', {bubbles:true}));"
+                " return i.value; })()"
+                % (json.dumps(input_id), json.dumps(str(int(value))),
+                   json.dumps(str(int(value)))))
+            return str(got) == str(int(value))
+        except Exception:
+            return False
+
     def fill_matrix(self, field_id: str, rows: int, cols: int, values: list[str]) -> str:
         st = self.matrix_popup()
+        clicked = ""
         if not st:
-            self.click_matrix()
+            clicked = self.click_matrix(field_id)
             for _ in range(10):
                 time.sleep(0.4)
                 st = self.matrix_popup()
                 if st:
                     break
         if not st:
-            return "矩阵面板没弹出来"
+            return f"矩阵面板没弹出来（{clicked or 'no-tool'}）"
         if st.get("spins"):
-            if not self.set_spinner(st["spins"][0], rows):
+            if not self.set_spinner(st["spins"][0], rows) \
+                    and not self._set_input_value(st["spins"][0], rows):
                 return f"行数没设成 {rows}"
-            if len(st["spins"]) > 1 and not self.set_spinner(st["spins"][1], cols):
+            if len(st["spins"]) > 1 and not self.set_spinner(st["spins"][1], cols) \
+                    and not self._set_input_value(st["spins"][1], cols):
                 return f"列数没设成 {cols}"
         st = self.matrix_popup()
-        if st and st.get("ok"):
-            self.js(_CLICK_JS % ("document.getElementById(%s) || null" % json.dumps(st["ok"])))
+        if st:
+            if st.get("ok"):
+                self.js(_CLICK_JS % ("document.getElementById(%s) || null"
+                                     % json.dumps(st["ok"])))
+            elif st.get("has_ok"):
+                self._click_matrix_ok()
         time.sleep(1.4)
         n = self.cell_ids(field_id)
         if n != rows * cols:
@@ -623,6 +1664,8 @@ class WebPlayer:
             self.clear_field()
             time.sleep(0.5)
             return f"矩阵尺寸没设成（要 {rows}×{cols}，插出来是 {n} 格）"
+        # 矩阵结构已经插进去了，把调色板收起来：它的浮层会挡住后面的输入框
+        self.close_palette()
 
         click_cell = r"""
 (() => {

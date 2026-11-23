@@ -157,13 +157,37 @@ def export_csv(dest: str) -> int:
     return len(rows)
 
 
+_FONT_CANDIDATES = (
+    r"C:\Windows\Fonts\msyh.ttc",
+    r"C:\Windows\Fonts\msyhbd.ttc",
+    r"C:\Windows\Fonts\simhei.ttf",
+    r"C:\Windows\Fonts\segoeui.ttf",
+    r"C:\Windows\Fonts\arial.ttf",
+)
+
+
+def _load_font(size: int):
+    """挑一个系统里存在的字体；都没有就退回 Pillow 内置位图字体，绝不抛异常。"""
+    from PIL import ImageFont
+
+    for path in _FONT_CANDIDATES:
+        try:
+            return ImageFont.truetype(path, size)
+        except Exception:
+            continue
+    try:
+        return ImageFont.load_default()
+    except Exception:
+        return None
+
+
 def render_chart(by_day: list[tuple[str, float, int]], width: int = 860, height: int = 170) -> "object":
     """把近 N 天费用画成柱状图（PIL Image）。"""
-    from PIL import Image, ImageDraw, ImageFont
+    from PIL import Image, ImageDraw
 
     img = Image.new("RGB", (width, height), (26, 22, 44))
     d = ImageDraw.Draw(img)
-    font = ImageFont.truetype(r"C:\Windows\Fonts\msyh.ttc", 11)
+    font = _load_font(11)
     n = max(1, len(by_day))
     max_cost = max((c for _, c, _ in by_day), default=0.0) or 1.0
     pad_l, pad_b, pad_t = 40, 26, 12

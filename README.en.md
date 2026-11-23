@@ -7,7 +7,7 @@
   <img src="https://img.shields.io/badge/windows-0078D6?logo=windows&amp;logoColor=white" alt="Windows 10 / 11" />
   <img src="https://img.shields.io/badge/Python-14354C.svg?logo=python&amp;logoColor=white" alt="Python 3.10+" />
   <img src="https://img.shields.io/badge/License-MIT-e8c46a.svg" alt="MIT License" />
-  <img src="https://img.shields.io/badge/version-1.0.5-c8323c.svg" alt="v1.0.5" />
+  <img src="https://img.shields.io/badge/version-1.0.6-c8323c.svg" alt="v1.0.6" />
   <img src="https://img.shields.io/badge/Touhou-Project%20Fan%20Work-c8323c.svg" alt="Touhou Project fan work" />
   <img src="https://img.shields.io/badge/QQ-EB1923?logo=tencent-qq&amp;logoColor=white" alt="QQ" />
   <img src="https://img.shields.io/badge/Gmail-D14836?logo=gmail&amp;logoColor=white" alt="Gmail" />
@@ -64,7 +64,7 @@ Download from [Releases](../../releases):
 
 | File | Description |
 | --- | --- |
-| `SpellCardHomework-Setup-1.0.5.exe` | Standard installer (Inno Setup) |
+| `SpellCardHomework-Setup-1.0.6.exe` | Standard installer (Inno Setup) |
 
 ### Option 2: Run from source
 
@@ -146,6 +146,17 @@ docs/                  screenshots and docs
 
 ## Changelog
 
+### v1.0.6 (2026-11-23)
+
+- **Safer full auto**: field-level UID/signature snapshots, Dojo player state, unique Check, banked skips and precise "leave unchecked" warnings
+- **Multi-candidate solving**: 3 independent samples, voting, escalation, cross-review, local substitution checks and R1 re-check
+- **Choice matching**: `B`, `B. 90%`, `Option B: ...` and exact labels; ambiguous or duplicate options are rejected instead of guessed
+- **Feedback state machine**: Good job / Incorrect / Partially correct, popup-scoped OK/Next and stale-dialog cleanup
+- **Formula palette and matrices**: More page support, matrix/vector/piecewise insertion with verification
+- **Manual start**: no auto-start on launch; barrier and auto-answer toasts
+- **Fixes**: Incorrect counted as correct, skipped questions pulled back, false "session finished" after manual stop, submitting with too few blanks, `CHOICE B` parsing, prerelease version comparison, trial reset loophole, ledger font crash, minimised-window monitor shutdown
+- **Authors**: added 会哈气の祥; three developers in a vertical layout; all version strings and the splash updated to v1.0.6
+
 ### v1.0.5 (2026-11-22)
 
 - **True translucent UI**: full-window artwork with semi-transparent panels; no large black title plate
@@ -182,10 +193,10 @@ Remove-ItemProperty "HKCU:\Software\Shinichi\SpellCardHomework" -Name trial -Err
 ```
 
 **Q: The first launch went straight to the main window.**
-Check that About shows **v1.0.5**, then look at the `access=` lines in `%APPDATA%\SpellCardHomework\boot.log`.
+Check that About shows **v1.0.6**, then look at the `access=` lines in `%APPDATA%\SpellCardHomework\boot.log`.
 
 **Q: The activation code is very long.**
-v1.0.5 codes are about 130 characters — paste the whole string.
+v1.0.6 codes are about 130 characters — paste the whole string.
 
 ## License and assets
 
@@ -204,6 +215,7 @@ For learning and personal use only. Users are responsible for complying with the
 
 - **Shinichi** — core app / OCR / automation · 1651452812@qq.com
 - **Fastrof** — UI art / testing / assets · 3530209532@qq.com
+- **会哈气の祥** — formula palette / matrix input / bug fixes · https://github.com/lic402514-gif
 
 ## Star History
 

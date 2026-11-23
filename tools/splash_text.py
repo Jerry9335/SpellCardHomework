@@ -18,7 +18,7 @@ TITLE = "符卡作业簿"
 SUB = "～ 幻想郷 · 宿題退治 ～"
 from modules import settings as _settings
 VER = f"v{_settings.APP_VERSION}"
-COPY = "© 2025 Shinichi & Fastrof  ·  MIT License  ·  东方 Project 二次创作"
+COPY = "© 2025 Shinichi · Fastrof · 会哈气の祥  ·  MIT License  ·  东方 Project 二次创作"
 
 FONT_TITLE = r"C:\Windows\Fonts\STXINGKA.TTF"
 FONT_UI = r"C:\Windows\Fonts\msyh.ttc"

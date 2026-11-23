@@ -22,14 +22,14 @@ a._show_update_dialog = lambda info: shown.append(info)
 a._notify = lambda *args, **kwargs: notified.append((args, kwargs))
 toastmod.show = lambda *args, **kwargs: True
 
-info = {"version": "1.0.6", "tag": "v1.0.6", "source": "gitee",
+info = {"version": "1.0.7", "tag": "v1.0.7", "source": "gitee",
         "date": "2026-11-30", "notes": "说明", "url": "https://example.com",
         "download": "https://example.com/Setup.exe"}
 
 # 手动点击「立即打听」，发现新版本：窗口 + Toast
 a._on_update_result(info, "", True)
-assert a._update_offered == "v1.0.6"
-assert shown and shown[0]["version"] == "1.0.6"
+assert a._update_offered == "v1.0.7"
+assert shown and shown[0]["version"] == "1.0.7"
 assert notified and notified[-1][1].get("force") is True
 assert "文文" in notified[-1][0][2]
 print("  OK  manual new version -> dialog + forced toast")
@@ -73,8 +73,8 @@ print("  OK  automatic new version -> dialog + normal toast")
 # 去重键
 a._toast_seen = {}
 a.cfg["toast_seen"] = {}
-a._do_notify("update", "博麗神社 · 号外", "测试", key="v1.0.6")
-assert a.cfg["toast_seen"].get("update") == "v1.0.6"
+a._do_notify("update", "博麗神社 · 号外", "测试", key="v1.0.7")
+assert a.cfg["toast_seen"].get("update") == "v1.0.7"
 print("  OK  notify dedupe key stored")
 
 # 安静时段：手动 force 仍然写 seen / 不因 quiet 丢弃

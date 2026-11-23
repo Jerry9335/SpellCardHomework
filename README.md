@@ -7,7 +7,7 @@
   <img src="https://img.shields.io/badge/windows-0078D6?logo=windows&amp;logoColor=white" alt="Windows 10 / 11" />
   <img src="https://img.shields.io/badge/Python-14354C.svg?logo=python&amp;logoColor=white" alt="Python 3.10+" />
   <img src="https://img.shields.io/badge/License-MIT-e8c46a.svg" alt="MIT License" />
-  <img src="https://img.shields.io/badge/version-1.0.5-c8323c.svg" alt="v1.0.5" />
+  <img src="https://img.shields.io/badge/version-1.0.6-c8323c.svg" alt="v1.0.6" />
   <img src="https://img.shields.io/badge/Touhou-Project%20Fan%20Work-c8323c.svg" alt="Touhou Project fan work" />
   <img src="https://img.shields.io/badge/QQ-EB1923?logo=tencent-qq&amp;logoColor=white" alt="QQ" />
   <img src="https://img.shields.io/badge/Gmail-D14836?logo=gmail&amp;logoColor=white" alt="Gmail" />
@@ -64,7 +64,7 @@ Windows 桌面小工具：**截屏识题 → 英文翻译 → AI 作答 → 全�
 
 | 文件 | 说明 |
 | --- | --- |
-| `SpellCardHomework-Setup-1.0.5.exe` | 常规安装包（Inno Setup） |
+| `SpellCardHomework-Setup-1.0.6.exe` | 常规安装包（Inno Setup） |
 
 ### 方式二：源码运行
 
@@ -146,6 +146,17 @@ docs/                  截图与文档
 
 ## 更新日志
 
+### v1.0.6（2026-11-23）
+
+- **全自动更稳**：字段级快照（UID / signature）、Dojo 判分状态、唯一 Check 校验、跳过入账、精确处理“未检查就离开”警告，避免误填、误点、静默停题
+- **多路求解**：3 路独立作答 + 投票 + 分歧追加 + 交叉审核 + 本地代入验算 + R1 复核，答案格式自动整理
+- **选项匹配**：支持 `B`、`B. 90%`、`Option B: ...`、完整选项文本；歧义/重复选项直接拒绝，不按位置瞎点
+- **反馈状态机**：识别 Good job / Incorrect / Partially correct，只点弹窗内 OK/Next，残留弹窗自动清理
+- **公式与矩阵**：公式调色板支持 More 第二页，矩阵/向量/分段模板可自动插入并校验
+- **启动与结界**：取消开程序自动退治；必须手动点「开始退治」；张开/关闭结界和开始/结束退治都有 Toast
+- **修复**：`Incorrect` 被误判为正确、跳过题被反复回补、手动收工后误报“这一轮退治完了”、填空数量不足仍交卷、`CHOICE B` 等格式解析、预发布版本更新比较、试用记录清除后无限重领、账本字体缺失崩溃、窗口最小化关闭自动监视
+- **关于作者**：加入开发组成员「会哈气の祥」，三位开发者竖排展示；版本号与启动图统一为 v1.0.6
+
 ### v1.0.5（2026-11-22）
 
 - **真半透明界面**：全窗口背景图 + 半透明面板，标题不再使用大面积黑色遮罩
@@ -182,10 +193,10 @@ Remove-ItemProperty "HKCU:\Software\Shinichi\SpellCardHomework" -Name trial -Err
 ```
 
 **Q：首次启动直接进了主界面？**
-先确认「关于程序」里版本是 **v1.0.5**，再看 `%APPDATA%\SpellCardHomework\boot.log` 里的 `access=` 记录。
+先确认「关于程序」里版本是 **v1.0.6**，再看 `%APPDATA%\SpellCardHomework\boot.log` 里的 `access=` 记录。
 
 **Q：激活码太长？**
-v1.0.5 的激活码约 130 字符，整段复制粘贴即可。
+v1.0.6 的激活码约 130 字符，整段复制粘贴即可。
 
 ## 开源协议与素材说明
 
@@ -204,6 +215,7 @@ v1.0.5 的激活码约 130 字符，整段复制粘贴即可。
 
 - **Shinichi**（主开发）— 程序主体 / 截屏识别 / 全自动化 · 1651452812@qq.com
 - **Fastrof**（副开发）— 界面美术 / 测试 / 素材整理 · 3530209532@qq.com
+- **会哈气の祥**（开发组成员）— 公式调色板 / 矩阵输入 / Bug 修复 · https://github.com/lic402514-gif
 
 ## Star History
 

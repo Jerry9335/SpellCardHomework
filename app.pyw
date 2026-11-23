@@ -19,6 +19,7 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.request
 import webbrowser
 import tkinter as tk
 import tkinter.font as tkfont
@@ -30,8 +31,9 @@ if HERE not in sys.path:
 
 from PIL import Image, ImageTk  # noqa: E402
 
-from modules import (banner_time, capture, clipboard, greetings, hotkey, latex, llm,
-                     ocr_local, prompts, region, settings, theme, user_name, web)  # noqa: E402
+from modules import (answer_engine, answer_format, banner_time, capture, clipboard,
+                     greetings, hotkey, latex, llm, ocr_local, prompts, question_reader,
+                     region, settings, skip_ledger, theme, user_name, verify_math, web)  # noqa: E402
 
 APP_TITLE = settings.APP_TITLE
 ASSETS = os.path.join(HERE, "assets")
@@ -207,6 +209,10 @@ class App:
         self._status_bar = None
         self._scrollbars: dict[str, ttk.Scrollbar] = {}
         self.web_on = False
+        self._barrier_last = None          # 结界（调试端口）上一次是否在线
+        self._barrier_closing = False
+        self._barrier_launching = False
+        self._barrier_launch_until = 0.0
         self.web_stop = threading.Event()
         self.web_thread: threading.Thread | None = None
         self.messages: list[dict] = []
@@ -238,6 +244,7 @@ class App:
         self.root.after(12000, self._rotate_quote)
         self.root.after(5000, self._update_tick)
         self.root.after(2500, self._trial_reminder)
+        self.root.after(1200, self._watch_barrier)
         self.clip_var.trace_add("write", lambda *_: setattr(self, "_clip_enabled", bool(self.clip_var.get())))
         self._start_clipboard()
         try:
@@ -247,8 +254,6 @@ class App:
             self._refresh_usage_meta()
         except Exception:
             pass
-        if self.autostart_var.get() and self.key_var.get().strip():
-            self.root.after(1600, self._autostart_web)
 
     # ------------------------------------------------------------------ 基础
     def _resolve_fonts(self) -> None:
@@ -265,13 +270,13 @@ class App:
         self._btn_icons: dict[str, ImageTk.PhotoImage] = {}
         self._author_imgs: dict[str, ImageTk.PhotoImage] = {}
         self._greet_avatars: dict[str, ImageTk.PhotoImage] = {}
-        for _ak in ("shinichi", "fastrof"):
+        for _ak in ("shinichi", "fastrof", "xiang"):
             _p = os.path.join(ASSETS, "authors", f"{_ak}.png")
             if not os.path.exists(_p):
                 continue
             try:
                 _im = Image.open(_p).convert("RGBA")
-                self._author_imgs[_ak] = ImageTk.PhotoImage(_im.resize((160, 160), Image.LANCZOS))
+                self._author_imgs[_ak] = ImageTk.PhotoImage(_im.resize((120, 120), Image.LANCZOS))
             except Exception:
                 pass
 
@@ -899,7 +904,7 @@ class App:
             padx=14, pady=8, cursor="hand2", font=(self.F_UI, 11),
         )
         self.btn_browser.pack(side="left", padx=(10, 0))
-        Tooltip(self.btn_browser, "打开专用答题浏览器（带调试端口，才能自动答题）")
+        Tooltip(self.btn_browser, "张开 / 关闭专用答题浏览器（带调试端口，才能自动答题）")
 
         self.web_var = tk.BooleanVar(value=False)
         self.btn_web = tk.Checkbutton(
@@ -1743,12 +1748,9 @@ class App:
         add_row(g2, 5, "结界入口", roww, "调试端口；『启动答题浏览器.bat』")
 
         cont_var = tk.BooleanVar(value=self.continue_wrong_var.get())
-        autostart_var = tk.BooleanVar(value=self.autostart_var.get())
         rowfull = tk.Frame(g2, bg=C["bg"])
         ttk.Checkbutton(rowfull, text="答错也继续下一题", variable=cont_var).pack(side="left")
-        ttk.Checkbutton(rowfull, text="开程序就自动退治", variable=autostart_var).pack(
-            side="left", padx=(18, 0))
-        add_row(g2, 6, "退治", rowfull, "答错也继续 / 开程序自动退治")
+        add_row(g2, 6, "退治", rowfull, "答错是否继续下一题（全自动仍需手动点「开始退治」）")
 
 
         start_url_var = tk.StringVar(value=self.start_url_var.get())
@@ -1806,7 +1808,6 @@ class App:
             self.browser_only_var.set(bool(browser_var.get()))
             self.web_port_var.set(int(web_port_var.get() or 9222))
             self.continue_wrong_var.set(bool(cont_var.get()))
-            self.autostart_var.set(bool(autostart_var.get()))
             self.start_url_var.set(start_url_var.get().strip() or "https://kysu.edu")
             self.update_enabled_var.set(bool(upd_on.get()))
             self.update_channel_var.set(ch_var.get())
@@ -1904,7 +1905,7 @@ class App:
         except Exception:
             _msg, _machine = "未授权", "-"
 
-        tk.Label(win, text="© 2025 Shinichi & Fastrof. 保留所有权利。",
+        tk.Label(win, text="© 2025 Shinichi · Fastrof · 会哈气の祥. 保留所有权利。",
                  bg=C["bg"], fg=C["text"], font=(self.F_UI, 10)).pack()
         tk.Label(win, text=f"授权：{_msg}    本机机器码：{_machine}",
                  bg=C["bg"], fg=C["gold"], font=(self.F_MONO[0], 9)).pack(pady=(4, 0))
@@ -1947,40 +1948,44 @@ class App:
         win.title("关于作者")
         win.configure(bg=C["bg"])
         win.transient(self.root)
-        win.geometry(f"640x580+{self.root.winfo_rootx() + 230}+{self.root.winfo_rooty() + 110}")
+        win.geometry(f"720x780+{self.root.winfo_rootx() + 230}+{self.root.winfo_rooty() + 80}")
         win.resizable(False, False)
 
         tk.Label(win, text="关于作者", bg=C["bg"], fg=C["gold"],
-                 font=(self.F_TITLE, 24)).pack(pady=(18, 10))
+                 font=(self.F_TITLE, 24)).pack(pady=(14, 8))
 
         cards = tk.Frame(win, bg=C["bg"])
-        cards.pack()
+        cards.pack(fill="x")
         people = [
             ("shinichi", "Shinichi", "主开发者", "程序主体 / 截屏识别 / 全自动化",
              "https://github.com/Jerry9335", "GitHub · Jerry9335"),
             ("fastrof", "Fastrof", "副开发者", "界面美术 / 测试 / 素材整理",
              "https://github.com/Fastrof", "GitHub · Fastrof"),
+            ("xiang", "会哈气の祥", "开发组成员", "公式调色板 / 矩阵输入 / Bug 修复",
+             "https://github.com/lic402514-gif", "GitHub · lic402514-gif"),
         ]
-        for idx, (key, name, role, desc, gh_url, gh_label) in enumerate(people):
+        for key, name, role, desc, gh_url, gh_label in people:
             card = tk.Frame(cards, bg=C["panel"], highlightbackground=C["border"],
-                            highlightthickness=1, padx=18, pady=16)
-            card.grid(row=0, column=idx, padx=14)
+                            highlightthickness=1, padx=14, pady=8)
+            card.pack(fill="x", padx=72, pady=5)
             img = self._author_imgs.get(key)
             if img is not None:
-                tk.Label(card, image=img, bg=C["panel"], bd=0).pack()
-            tk.Label(card, text=name, bg=C["panel"], fg=C["text"],
-                     font=(self.F_TITLE, 20)).pack(pady=(10, 0))
-            tk.Label(card, text=role, bg=C["panel"], fg=C["gold"],
-                     font=(self.F_UI, 10, "bold")).pack(pady=(2, 4))
-            tk.Label(card, text=desc, bg=C["panel"], fg=C["muted"],
-                     font=(self.F_UI, 9)).pack()
-            link = tk.Label(card, text=gh_label, bg=C["panel"], fg=C["gold"],
-                            cursor="hand2", font=(self.F_UI, 9, "underline"))
-            link.pack(pady=(6, 0))
+                tk.Label(card, image=img, bg=C["panel"], bd=0).pack(side="left", padx=(2, 16))
+            info = tk.Frame(card, bg=C["panel"])
+            info.pack(side="left", fill="both", expand=True, pady=4)
+            tk.Label(info, text=name, bg=C["panel"], fg=C["text"],
+                     font=(self.F_TITLE, 18), anchor="w").pack(fill="x")
+            tk.Label(info, text=role, bg=C["panel"], fg=C["gold"],
+                     font=(self.F_UI, 10, "bold"), anchor="w").pack(fill="x", pady=(1, 3))
+            tk.Label(info, text=desc, bg=C["panel"], fg=C["muted"],
+                     font=(self.F_UI, 9), anchor="w").pack(fill="x")
+            link = tk.Label(info, text=gh_label, bg=C["panel"], fg=C["gold"],
+                            cursor="hand2", font=(self.F_UI, 9, "underline"), anchor="w")
+            link.pack(fill="x", pady=(5, 0))
             link.bind("<Button-1>", lambda _e, u=gh_url: self._open_url(u))
 
         tk.Label(win, text="感谢游玩，愿幻想乡的作业都被温柔地退治掉。",
-                 bg=C["bg"], fg=C["muted"], font=(self.F_UI, 10)).pack(pady=(18, 0))
+                 bg=C["bg"], fg=C["muted"], font=(self.F_UI, 10)).pack(pady=(12, 0))
         tk.Button(win, text="关闭", command=win.destroy, bg=C["panel2"], fg=C["text"],
                   relief="flat", bd=0, padx=20, pady=5, cursor="hand2",
                   font=(self.F_UI, 10)).pack(pady=12)
@@ -2143,7 +2148,8 @@ class App:
         self.vision_key_var = tk.StringVar(value=c.get("vision_api_key", "") or "")
         self.web_port_var = tk.IntVar(value=int(c.get("web_port", 9222) or 9222))
         self.continue_wrong_var = tk.BooleanVar(value=bool(c.get("web_continue_on_wrong", True)))
-        self.autostart_var = tk.BooleanVar(value=bool(c.get("web_autostart", False)))
+        # 全自动必须手动点「开始退治」才启动；旧配置里的 web_autostart 不再生效。
+        self.autostart_var = tk.BooleanVar(value=False)
         self.start_url_var = tk.StringVar(value=c.get("web_start_url", "https://kysu.edu") or "https://kysu.edu")
         if getattr(self, "clip_var", None) is None:
             self.clip_var = tk.BooleanVar(value=bool(c.get("clipboard_on", True)))
@@ -2207,7 +2213,7 @@ class App:
             auto_threshold=float(self.threshold_var.get() or 1.5),
             minimize_on_capture=bool(self.minimize_var.get()),
             web_port=int(self.web_port_var.get() or 9222),
-            web_autostart=bool(self.autostart_var.get()),
+            web_autostart=False,
             web_start_url=self.start_url_var.get().strip(),
             web_continue_on_wrong=bool(self.continue_wrong_var.get()),
             clipboard_on=bool(self.clip_var.get()),
@@ -2794,6 +2800,7 @@ class App:
             return
         self.cancel.set()
         self.web_stop.set()
+        self._web_user_stop = True
         if self.auto_var.get():
             self.auto_var.set(False)
         if self.web_on:
@@ -3002,7 +3009,11 @@ class App:
             self._status("灵梦：你正挡着我呢，切回题目窗口我就继续。", "warn")
             return
 
-        cap = self._grab_now(allow_yield=False)
+        try:
+            cap = self._grab_now(allow_yield=False)
+        except RuntimeError:
+            # 目标窗口最小化/暂时抓不到：这一拍跳过，别把「自动监视」自己关掉
+            return
         now = time.time()
         threshold = float(self.threshold_var.get() or 1.5)
         settle = float(self.settle_var.get() or 0.8)
@@ -3063,6 +3074,10 @@ class App:
             self._web_try = {}
             self._web_hint = ""
             self._web_prev = {}
+            self._web_graph_done = set()
+            self._web_blocked = []
+            self._web_partial_done = set()
+            self._web_all_done = False
             self._web_question = 0
             self._web_ok = 0
             self._web_fail = 0
@@ -3085,31 +3100,140 @@ class App:
             self.web_thread = threading.Thread(target=self._web_loop, daemon=True)
             self.web_thread.start()
             self._status("紫：全自动已开启——等题目出现就会自动读题、作答、交卷、翻页。", "ok")
+            self._notify("auto", "博麗神社 · 退治",
+                         "灵梦：退治开始——结界已连通，接下来交给我。",
+                         force=True, avatar="reimu")
         else:
             self.web_on = False
             self._web_user_stop = True
             self.web_stop.set()
             self.btn_web.configure(text="⛩  开始退治")
             self._status("全自动模式已关闭", "info")
+            self._notify("auto", "博麗神社 · 退治",
+                         "魔理沙：退治已停止，结界先留着。",
+                         force=True, avatar="marisa")
+
+    def _barrier_toast(self, body: str, avatar: str = "yukari") -> None:
+        """结界/退治动作的即时 Toast：不被静音时段或去重键吞掉。"""
+        try:
+            self._notify("auto", "博麗神社 · 结界", body, force=True, avatar=avatar)
+        except Exception:
+            pass
+
+    def _watch_barrier(self) -> None:
+        """轮询调试端口：手动开/关浏览器时也推送结界 Toast。"""
+        try:
+            port = int(self.web_port_var.get() or 9222)
+            open_now = self._web_port_open(port)
+            last = getattr(self, "_barrier_last", None)
+            launching = bool(getattr(self, "_barrier_launching", False))
+            if open_now:
+                self._barrier_launching = False
+                self._barrier_last = True
+                try:
+                    self.browser_var.set(True)
+                    self.btn_browser.configure(text="☂  关闭结界")
+                except Exception:
+                    pass
+            elif launching and time.time() < float(getattr(self, "_barrier_launch_until", 0)):
+                # 启动浏览器需要几秒，别在它起来前把勾去掉/文案打回。
+                self._barrier_last = False
+                return
+            else:
+                if launching:
+                    self._barrier_launching = False
+                    self._barrier_toast("魔理沙：结界张开超时，浏览器可能没起来。",
+                                        avatar="marisa")
+                self._barrier_last = False
+                try:
+                    self.browser_var.set(False)
+                    self.btn_browser.configure(text="☂  张开结界")
+                except Exception:
+                    pass
+            if last is not None and open_now != last:
+                if open_now:
+                    self._barrier_toast("紫：结界已张开，专用答题浏览器已连上调试端口。")
+                else:
+                    self._barrier_toast("紫：结界已关闭，调试端口已断开。")
+                    if getattr(self, "web_on", False):
+                        self.web_var.set(False)
+                        self._toggle_web()
+                        self._status("紫：浏览器关掉了，全自动也先停了。", "warn")
+        except Exception:
+            pass
+        finally:
+            try:
+                self.root.after(1500, self._watch_barrier)
+            except Exception:
+                pass
+
+    def _close_answer_browser(self, port: int) -> bool:
+        """通过 CDP Browser.close 关闭专用答题浏览器，避免误杀普通 Edge。"""
+        try:
+            with urllib.request.urlopen(
+                    f"http://127.0.0.1:{int(port)}/json/version", timeout=2.0) as r:
+                info = json.loads(r.read().decode("utf-8", "replace"))
+            ws = info.get("webSocketDebuggerUrl") or ""
+            if ws:
+                cdp = web.CDP(ws, timeout=2.0)
+                try:
+                    cdp.call("Browser.close", timeout=1.2)
+                except Exception:
+                    pass
+                finally:
+                    cdp.close()
+        except Exception:
+            pass
+        for _ in range(12):
+            if not self._web_port_open(int(port)):
+                return True
+            time.sleep(0.2)
+        return False
 
     def _toggle_browser(self) -> None:
-        """☂ 张开结界：只负责把专用浏览器（带调试端口）打开。"""
+        """☂ 张开/关闭结界：专用浏览器（带调试端口）。"""
         port = int(self.web_port_var.get() or 9222)
         if self.browser_var.get():
             if self._web_port_open(port):
-                self.btn_browser.configure(text="☂  结界已开")
+                self.btn_browser.configure(text="☂  关闭结界")
+                self._barrier_last = True
+                self._barrier_toast("紫：结界已张开，专用答题浏览器已经在跑。")
                 self._status("紫：结界早就张开了（浏览器已经在跑）。", "info")
                 return
             ok = self._launch_answer_browser()
             if ok:
-                self.btn_browser.configure(text="☂  结界已开")
-                self._status("紫：结界张开——专用浏览器正在启动，等它起来再点「退治开始」。", "ok")
+                self._barrier_launching = True
+                self._barrier_launch_until = time.time() + 12.0
+                self.btn_browser.configure(text="☂  结界正在张开")
+                self._status("紫：结界张开——专用浏览器正在启动，起来后会再通知你。", "ok")
             else:
                 self.browser_var.set(False)
                 self._status("魔理沙：找不到「启动答题浏览器.bat」。", "err")
+                self._barrier_toast("魔理沙：结界张开失败，找不到「启动答题浏览器.bat」。",
+                                    avatar="marisa")
         else:
-            self.btn_browser.configure(text="☂  张开结界")
-            self._status("紫：结界收回去了（浏览器本身不关，你自己关就好）。", "info")
+            if getattr(self, "web_on", False):
+                self.web_var.set(False)
+                self._toggle_web()
+            self.btn_browser.configure(text="☂  正在关闭结界")
+            self._barrier_closing = True
+            self._barrier_launching = False
+            ok = self._close_answer_browser(port)
+            self._barrier_closing = False
+            if ok:
+                # 不在这里改 _barrier_last：让 _watch_barrier 观察到
+                # True→False 的变化，统一只推一条“结界已关闭”。
+                was_open = bool(getattr(self, "_barrier_last", False))
+                self.browser_var.set(False)
+                self.btn_browser.configure(text="☂  张开结界")
+                self._status("紫：结界已关闭，专用答题浏览器已退出。", "info")
+                if not was_open:
+                    self._barrier_toast("紫：结界已关闭。")
+            else:
+                self.browser_var.set(True)
+                self.btn_browser.configure(text="☂  关闭结界")
+                self._status("魔理沙：结界关不掉——浏览器可能还在跑，你再试一次。", "warn")
+                self._barrier_toast("魔理沙：结界关闭失败，浏览器可能还在跑。", avatar="marisa")
 
     def _web_port_open(self, port: int) -> bool:
         try:
@@ -3134,15 +3258,22 @@ class App:
         except Exception:
             return False
 
-    def _autostart_web(self) -> None:
-        """启动后自动进入全自动模式（设置里打开才生效）。"""
-        if self.web_on or not self.key_var.get().strip():
-            return
-        self.web_var.set(True)
-        self._toggle_web()
-
     def _web_status(self, text: str, level: str = "info") -> None:
         self.q.put(("status", text, level))
+        # 自动答题轨迹：方便测试后定位卡在哪一题/哪一小问
+        try:
+            logdir = os.path.join(os.environ.get("APPDATA", ""), "SpellCardHomework")
+            os.makedirs(logdir, exist_ok=True)
+            log = os.path.join(logdir, "auto.log")
+            if os.path.exists(log) and os.path.getsize(log) > 2 * 1024 * 1024:
+                try:
+                    os.replace(log, log + ".1")
+                except Exception:
+                    pass
+            with open(log, "a", encoding="utf-8") as f:
+                f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} [{level}] {text}\n")
+        except Exception:
+            pass
 
     def _web_loop(self) -> None:
         """全自动主循环：连不上就等，断了就重连，一直做到没有下一题。"""
@@ -3166,6 +3297,11 @@ class App:
 
                 try:
                     if not self._web_step(drv):
+                        if self.web_stop.is_set():
+                            break
+                        if self._web_recover_blocked(drv):
+                            errs = 0
+                            continue
                         break
                     errs = 0
                 except Exception as e:
@@ -3198,23 +3334,277 @@ class App:
             if not getattr(self, "_web_user_stop", True):
                 _ok = int(getattr(self, "_web_ok", 0))
                 _fail = int(getattr(self, "_web_fail", 0))
-                if _fail or getattr(self, "_web_round_failed", False):
+                _blocked = [] if getattr(self, "_web_all_done", False) else list(getattr(self, "_web_blocked", []))
+                if _blocked:
+                    _body = (f"魔理沙：这一轮跑完了。对 {_ok} 错 {_fail}；"
+                             f"第 {','.join('Q'+str(n) for n in _blocked)} 题留给人工。")
+                elif _fail or (getattr(self, "_web_round_failed", False)
+                               and not getattr(self, "_web_all_done", False)):
                     _body = (f"魔理沙：啧，这一轮没退治干净……对 {_ok} 错 {_fail}，"
                              "你自己看着办。")
                 else:
                     _body = f"魔理沙：这一轮退治完了。对 {_ok} 错 {_fail}，还行嘛。"
                 self._notify("auto", "博麗神社 · 退治", _body,
-                             key=f"auto:{int(time.time())}", avatar="marisa")
+                             key=f"auto:{int(time.time())}", force=True, avatar="marisa")
+            if not getattr(self, "_web_user_stop", True):
+                if _blocked:
+                    self._web_status(
+                        f"魔理沙：全自动收工——对 {_ok} / 错 {_fail}；"
+                        f"第 {','.join('Q'+str(n) for n in _blocked)} 题留给人工。", "ok")
+                elif getattr(self, "_web_round_failed", False) \
+                        and not getattr(self, "_web_all_done", False):
+                    self._web_status(
+                        "魔理沙：全自动停下了——当前题没答完，停在原题，没有跳题。",
+                        "err")
+                else:
+                    self._web_status(
+                        f"灵梦：全自动收工——没有更多题了（对 {_ok} / 错 {_fail}）。", "ok")
             self.q.put(("web_off", getattr(self, "_web_gen", 0)))
+
+    def _web_recover_blocked(self, drv) -> bool:
+        """单题失败不要退出全自动：标记待人工，跳到下一道未完成题。"""
+        if getattr(self, "_web_ledger_failed", False):
+            self._web_status("魔理沙：跳过账本没写成，停在原题等人工，不再跳过。", "err")
+            return False
+        try:
+            st = drv.state() or {}
+        except Exception:
+            return False
+        qs = [q for q in (st.get("questions") or []) if int(q.get("n") or 0) > 0]
+        if qs and all(self._web_q_done(q) for q in qs):
+            self._web_all_done = True
+            return False
+        qno = int(st.get("qno") or 0)
+        if qno and qno not in self._web_blocked:
+            try:
+                skip_ledger.record_once(
+                    qno, st.get("part") or [], reason="自动流程未能完成",
+                    source="pearson")
+            except Exception as exc:
+                # 入账失败时不能把题号塞进“待人工”冒充已记录，直接停。
+                self._web_ledger_failed = True
+                self._web_round_failed = True
+                self._web_status(
+                    f"魔理沙：待人工账本写入失败（{exc}），停在原题。", "err")
+                return False
+            self._web_blocked.append(qno)
+        blocked = set(self._web_blocked)
+        cand = [q for q in qs if int(q["n"]) not in blocked
+                and not self._web_q_done(q)
+                and int(q["n"]) > qno]
+        if not cand:
+            cand = [q for q in qs if int(q["n"]) not in blocked
+                    and not self._web_q_done(q)]
+        if not cand:
+            if qs and all(self._web_q_done(q) for q in qs):
+                self._web_all_done = True
+            return False
+        target = sorted(cand, key=lambda q: int(q["n"]))[0]
+        tn = int(target["n"])
+        self._web_status(
+            f"魔理沙：第 {qno} 题先标记待人工，跳到第 {tn} 题继续。", "warn")
+        try:
+            if drv.goto_question(tn) != "ok":
+                return False
+        except Exception:
+            return False
+        # 注意：调用本函数前当前题已经写入 skip ledger，才允许 Yes 离开。
+        self._web_leave_if_prompt(drv, allow=True)
+        time.sleep(1.1)
+        try:
+            return int((drv.state() or {}).get("qno") or 0) == tn
+        except Exception:
+            return False
 
     def _web_key(self, st: dict) -> str:
         text = (st.get("text") or "")[:1200]
+        part = tuple(st.get("part") or [])
         ids = [f["id"] for f in st.get("fields", [])]
         ids += [r["id"] for r in st.get("radios", [])]
+        ids += [r["id"] for r in st.get("checks", [])]
         ids += [i["id"] for i in st.get("inputs", [])]
         ids += [d["id"] for d in st.get("dropdowns", [])]
         ids += [s["id"] for s in st.get("selects", [])]
-        return hashlib.md5((text + "|" + ",".join(ids)).encode()).hexdigest()
+        labels = [str(f.get("label") or "")[:80] for f in st.get("fields", [])]
+        labels += [str(r.get("label") or "")[:80] for r in st.get("radios", [])]
+        labels += [str(c.get("label") or "")[:80] for c in st.get("checks", [])]
+        qno = int(st.get("qno") or 0)
+        raw = f"{qno}|{part}|{text}|{','.join(ids)}|{'|'.join(labels)}"
+        return hashlib.md5(raw.encode()).hexdigest()
+
+    @staticmethod
+    def _web_status_kind(status: str) -> str:
+        """把 Pearson 题目列表里的各种状态归一成可判断的几类。
+
+        注意不能直接 `"correct" in s`：`Incorrect` 也包含 correct 子串，
+        会把答错的题误判成已完成。
+        """
+        s = (status or "").strip().lower()
+        if not s:
+            return "blank"
+        if "partial" in s:
+            return "partial"
+        if "incorrect" in s or "not correct" in s:
+            return "incorrect"
+        if re.search(r"\bcorrect\b", s):
+            return "correct"
+        if "not answered" in s or "unanswered" in s or "incomplete" in s:
+            return "blank"
+        return "other"
+
+    @classmethod
+    def _web_done_status(cls, status: str) -> bool:
+        return cls._web_status_kind(status) in ("correct", "incorrect")
+
+    def _web_is_blocked(self, q: dict) -> bool:
+        try:
+            return int(q.get("n") or 0) in (getattr(self, "_web_blocked", None) or [])
+        except Exception:
+            return False
+
+    def _web_q_done(self, q: dict) -> bool:
+        """部分对的题如果已经无法再改（没有 Check），也视为处理过，避免来回补题死循环。"""
+        try:
+            n = int(q.get("n") or 0)
+        except Exception:
+            n = 0
+        return self._web_done_status(q.get("status")) \
+            or n in getattr(self, "_web_partial_done", set())
+
+    def _web_mark_partial_done(self, qno: int) -> None:
+        try:
+            if not hasattr(self, "_web_partial_done"):
+                self._web_partial_done = set()
+            self._web_partial_done.add(int(qno))
+        except Exception:
+            pass
+
+    def _web_pick_unanswered(self, st: dict) -> dict | None:
+        """当前题之后最近的未完成题；没有则回头找。"""
+        qs = [q for q in (st.get("questions") or []) if int(q.get("n") or 0) > 0]
+        cur = int(st.get("qno") or 0)
+        if not qs:
+            return None
+        after = [q for q in qs if int(q["n"]) > cur
+                 and not self._web_q_done(q) and not self._web_is_blocked(q)]
+        if after:
+            return sorted(after, key=lambda q: int(q["n"]))[0]
+        before = [q for q in qs if int(q["n"]) < cur
+                  and not self._web_q_done(q) and not self._web_is_blocked(q)]
+        if before:
+            return sorted(before, key=lambda q: int(q["n"]), reverse=True)[0]
+        return None
+
+    def _web_first_unfinished(self, st: dict) -> dict | None:
+        qs = [q for q in (st.get("questions") or []) if int(q.get("n") or 0) > 0]
+        left = [q for q in qs if not self._web_q_done(q) and not self._web_is_blocked(q)]
+        return min(left, key=lambda q: int(q["n"])) if left else None
+
+    def _web_leave_if_prompt(self, drv, allow: bool = False) -> bool:
+        """处理 Pearson 的“离开未完成题”警告。
+
+        默认永远点 No：只有调用方已经把当前题写进待人工账本（或当前题已判分）
+        才允许点 Yes。返回 True 表示已经可以继续导航。
+        """
+        try:
+            if not drv.leave_prompt():
+                return True
+        except Exception:
+            return True
+        try:
+            ls = drv.leave_state()
+        except Exception:
+            ls = {}
+        if not ls.get("visible"):
+            # 识别到文字但没有结构化弹窗：宁可停下来让用户处理
+            self._web_status("灵梦：出现离开确认，但认不出按钮，先停在这里。", "warn")
+            return False
+        if not allow:
+            try:
+                r = drv.click_leave("no")
+            except Exception:
+                r = "error"
+            if r == "ok":
+                self._web_status("灵梦：这是离开未完成题的警告，先点 No 留下来。", "info")
+                time.sleep(0.7)
+            else:
+                self._web_status(f"灵梦：离开警告点 No 失败（{r}），停在这里。", "warn")
+            return False
+        if ls.get("kind") == "unchecked" and ls.get("yes_count") != 1:
+            self._web_status("灵梦：离开警告的 Yes 不唯一，不敢点，停在这里。", "warn")
+            return False
+        try:
+            r = drv.click_leave("yes")
+        except Exception:
+            r = "error"
+        if r != "ok":
+            self._web_status(f"灵梦：离开警告点 Yes 失败（{r}），停在这里。", "warn")
+            return False
+        time.sleep(0.8)
+        return True
+
+    def _web_jump_first_unfinished(self, drv, st: dict) -> bool:
+        """如果前面还有没做完的题（比如 Q7 Partially correct），先回去补。"""
+        cur = int(st.get("qno") or 0)
+        first = self._web_first_unfinished(st)
+        if not first or int(first["n"]) >= cur:
+            return False
+        n = int(first["n"])
+        self._web_status(f"灵梦：前面第 {n} 题还没做完，先回去补。", "info")
+        for _attempt in range(3):
+            try:
+                if drv.goto_question(n) != "ok":
+                    time.sleep(0.8)
+                    continue
+                # 当前题尚未完成时不允许 Yes 离开；这里只用 No 处理警告。
+                self._web_leave_if_prompt(drv)
+                time.sleep(1.2)
+                st2 = drv.state() or {}
+                if int(st2.get("qno") or 0) == n:
+                    return True
+            except Exception:
+                pass
+        return False
+
+    def _web_jump_next_unanswered(self, drv, st: dict | None = None) -> bool:
+        """当前题已经答完时，直接点题号跳到下一道未完成题，而不是傻等 Next。"""
+        try:
+            st = st or drv.state() or {}
+        except Exception:
+            return False
+        qno = int(st.get("qno") or 0)
+        if qno <= 0:
+            return False
+        q = next((x for x in (st.get("questions") or [])
+                  if int(x.get("n") or 0) == qno), None)
+        if not q or not self._web_q_done(q):
+            return False
+        target = self._web_pick_unanswered(st)
+        if not target:
+            qs = [q for q in (st.get("questions") or []) if int(q.get("n") or 0) > 0]
+            self._web_all_done = bool(qs) and all(self._web_q_done(q) for q in qs)
+            return False
+        tn = int(target["n"])
+        self._web_status(f"灵梦：第 {qno} 题已经答过，转到第 {tn} 题继续…", "info")
+        for _attempt in range(3):
+            try:
+                if drv.goto_question(tn) != "ok":
+                    time.sleep(0.8)
+                    continue
+            except Exception:
+                time.sleep(0.8)
+                continue
+            # 当前题已判分，才允许 Yes 离开未检查的残留答案。
+            self._web_leave_if_prompt(drv, allow=True)
+            time.sleep(1.1)
+            try:
+                st2 = drv.state() or {}
+                if int(st2.get("qno") or 0) == tn:
+                    self._web_status(f"灵梦：已到第 {tn} 题。", "info")
+                    return True
+            except Exception:
+                pass
+        return False
 
     def _web_wait_change(self, drv, old_key: str, timeout: float = 15.0) -> bool:
         """等页面换题（文本/控件变化），最多 timeout 秒。"""
@@ -3230,10 +3620,151 @@ class App:
                 return True
         return False
 
+    @staticmethod
+    def _web_sig(st: dict) -> str:
+        """页面快照指纹；P0 用它发现“模型思考期间换题/换控件”。"""
+        try:
+            return str((st or {}).get("signature") or "")
+        except Exception:
+            return ""
+
+    def _web_snapshot_intact(self, drv, st: dict) -> bool:
+        """确认页面仍是同一份快照、且所有待填控件 UID 仍存在。
+
+        这是 P0 的最后一道闸：模型算完后页面如果换题，宁可丢弃答案重读，
+        也绝不把上一题的 (5,25) 填到下一题的同名输入框里。
+        """
+        try:
+            now = drv.state() or {}
+        except Exception:
+            return True
+        old_sig = self._web_sig(st)
+        new_sig = self._web_sig(now)
+        if old_sig and new_sig and old_sig != new_sig:
+            return False
+        present = getattr(drv, "field_present", None)
+        if not callable(present):
+            return True
+        for key in ("fields", "inputs", "radios", "checks", "selects", "dropdowns"):
+            for c in (st.get(key) or []):
+                uid = str((c or {}).get("uid") or "")
+                if not uid:
+                    continue
+                try:
+                    if not present(uid):
+                        return False
+                except Exception:
+                    pass
+        return True
+
+    @staticmethod
+    def _web_player_kind(ps: dict) -> str:
+        """把 Dojo player 的 _correctness 归一成 correct/incorrect/partial。"""
+        if not isinstance(ps, dict) or not ps.get("ok"):
+            return ""
+        raw = ps.get("correctness")
+        if raw is True:
+            return "correct"
+        if raw is False:
+            return "incorrect"
+        text = str(raw or "").strip().lower()
+        if not text:
+            return ""
+        if "incorrect" in text or text in ("wrong", "false", "no"):
+            return "incorrect"
+        if "partial" in text:
+            return "partial"
+        if "correct" in text or text in ("yes", "true"):
+            return "correct"
+        return ""
+
+    def _web_click_check(self, drv) -> bool:
+        """Check answer 唯一且启用才点；绝不点旧 Check 或弹窗背后的按钮。
+
+        P0：先看 Dojo player 的判分状态；再用 checkCandidates 保证唯一性。
+        """
+        for _ in range(12):
+            try:
+                st = drv.state() or {}
+            except Exception:
+                st = {}
+            try:
+                ps = drv.player_state() if hasattr(drv, "player_state") else {}
+            except Exception:
+                ps = {}
+            # 只信“反馈弹窗正在打开”的 Dojo 状态；resultPosted 可能是上一题
+            # 残留的 revision，不能单独作为“本题已判分”的依据。
+            if ps.get("feedbackOpen") and self._web_player_kind(ps):
+                return False
+            try:
+                cs = drv.completion_state() if hasattr(drv, "completion_state") else {}
+            except Exception:
+                cs = {}
+            kind = str((cs or {}).get("kind") or "")
+            if kind in ("correct", "incorrect", "finished"):
+                return False
+            if kind == "leave":
+                # 「确定离开本题吗」：点 No 留下，再重试 Check，绝不盲目提交/跳题
+                try:
+                    drv.click_text(r"^\s*no\s*$")
+                except Exception:
+                    pass
+                time.sleep(0.9)
+                continue
+            # 页面上同时出现多个 Check（旧小问残留）时绝不猜，停下来等调用方处理
+            try:
+                cks = drv.check_state() if hasattr(drv, "check_state") else {}
+            except Exception:
+                cks = {}
+            if int((cks or {}).get("count") or 0) > 1:
+                self._web_status("灵梦：页面上出现多个 Check 按钮，先不乱点，停一步检查。", "warn")
+                self._web_round_failed = True
+                return False
+            if cks.get("ok"):
+                try:
+                    res = drv.click_check_unique()
+                    if res == "ok":
+                        return True
+                    if res in ("multiple", "none"):
+                        # 页面在下一步又变了，重读状态再试
+                        time.sleep(0.35)
+                        continue
+                except Exception:
+                    pass
+            if st.get("canCheck", st.get("hasCheck")):
+                try:
+                    res = drv.click_text(r"^(check answer|final check)$")
+                    if res != "ok" and hasattr(drv, "click_text_native"):
+                        res = drv.click_text_native(r"^(check answer|final check)$")
+                    if res == "ok":
+                        time.sleep(0.45)
+                        return True
+                except Exception:
+                    pass
+            time.sleep(0.45)
+        return False
+
     def _web_feedback(self, drv, timeout: float = 15.0) -> str:
         deadline = time.time() + timeout
         while time.time() < deadline:
             try:
+                # Dojo player 的内部判分优先；它比 DOM 弹窗更稳定
+                ps = drv.player_state() if hasattr(drv, "player_state") else {}
+                pk = self._web_player_kind(ps)
+                if pk and (ps.get("feedbackOpen") or ps.get("resultPosted")):
+                    if pk == "correct":
+                        return "correct"
+                    if pk == "incorrect":
+                        return "incorrect"
+                    if pk == "partial":
+                        # 当前调用方只区分 correct/incorrect；partial 视为可重试
+                        return "incorrect"
+                cs = drv.completion_state() if hasattr(drv, "completion_state") else {}
+                kind = str((cs or {}).get("kind") or "")
+                if kind in ("correct", "finished"):
+                    return "correct"
+                if kind == "incorrect":
+                    return "incorrect"
                 fb = (drv.feedback() or "").strip()
             except Exception:
                 fb = ""
@@ -3248,18 +3779,28 @@ class App:
         return (int(m.group(1)), int(m.group(2))) if m else (1, 1)
 
     def _web_next(self, drv, old_key: str) -> bool:
-        """点下一题并等页面变化。还有小问没做完时不点。"""
+        """点下一题并等页面变化。还有小问没做完时不点。
+
+        如果当前有反馈弹窗，只点弹窗内部的 Next；绝不点弹窗背后的旧 Next/Check。
+        """
         try:
             st = drv.state() or {}
             pv = st.get("part") or []
             n, m = (int(pv[0]), int(pv[1])) if len(pv) == 2 else (0, 0)
-            if 0 < n < m and st.get("hasCheck"):
+            if 0 < n < m:
                 self._web_status(f"灵梦：还有第 {n + 1} 小问（共 {m} 问），先不翻页", "info")
                 return False
         except Exception:
             pass
         try:
-            if drv.click_text(r"^next( question)?$") != "ok":
+            cs = drv.completion_state() if hasattr(drv, "completion_state") else {}
+            if cs and cs.get("kind") not in ("", "none"):
+                if not cs.get("hasNext"):
+                    return False
+                res = drv.click_completion("next") if hasattr(drv, "click_completion") else "no"
+            else:
+                res = drv.click_text(r"^next( question)?$")
+            if res != "ok":
                 return False
             time.sleep(0.6)
             if drv.leave_prompt():
@@ -3274,9 +3815,9 @@ class App:
 
         多小问题里每个 part 会动态增加输入框，所以不能假设“第 N 问=第 N 个框”。
         """
-        boxes = st.get("fields") or st.get("inputs") or []
+        boxes = list(st.get("fields") or []) + list(st.get("inputs") or [])
         usable = [b for b in boxes
-                  if not b.get("readonly") and not b.get("disabled")] or boxes
+                  if not b.get("readonly") and not b.get("disabled")]
         ph = [b for b in usable
               if "enter your response" in str(b.get("label") or "").lower()]
         if ph:
@@ -3288,29 +3829,54 @@ class App:
         return order
 
     def _web_skip(self, drv, key: str) -> bool:
-        """这题答不了：先关掉弹窗，能翻页就翻下一页，翻不动就停下。"""
+        """这题答不了：先写入 review 账本，再让主循环跳到下一道未完成题。"""
         self._web_round_failed = True
         try:
             self._web_dismiss(drv)
         except Exception:
             pass
+        qno = 0
+        part = []
         try:
-            if self._web_next(drv, key):
-                return True
+            _st = drv.state() or {}
+            qno = int(_st.get("qno") or 0)
+            part = list(_st.get("part") or [])
         except Exception:
-            pass
-        self._web_status("魔理沙：这题我处理不了，先停下让你看看。", "warn")
+            qno = 0
+        try:
+            skip_ledger.record_once(qno, part, reason="自动流程跳过", source="pearson")
+            _pending = skip_ledger.pending_count()
+            _extra = f"（累计待人工 {_pending} 题）" if _pending else ""
+            self._web_ledger_failed = False
+        except Exception as exc:
+            # P0 铁律：没有成功入账就不允许离开本题。宁可停下等人工，
+            # 也不能出现“跳过但谁都不知道”的静默漏题。
+            self._web_ledger_failed = True
+            self._web_round_failed = True
+            self._web_status(
+                f"魔理沙：跳过账本写入失败（{exc}），先停下，不离开本题。", "err")
+            return False
+        if qno:
+            self._web_status(
+                f"魔理沙：第 {qno} 题先留给人工，自动跳到下一道未完成题。{_extra}", "warn")
+        else:
+            self._web_status(
+                f"魔理沙：这道题先留给人工，自动继续找下一题。{_extra}", "warn")
         return False
 
     def _web_dismiss(self, drv) -> None:
-        """点掉判分弹窗的 OK，并等它真的消失。"""
+        """点掉当前判分弹窗内部的 OK，并等它真的消失。"""
         try:
-            drv.click_text(r"^\s*ok\s*$")
+            if hasattr(drv, "dismiss_feedback"):
+                drv.dismiss_feedback()
+            else:
+                drv.click_text(r"^\s*ok\s*$")
         except Exception:
             pass
         for _ in range(12):
             try:
-                if not (drv.feedback() or "").strip():
+                cs = drv.completion_state() if hasattr(drv, "completion_state") else {}
+                if not cs or cs.get("kind") in ("", "none"):
                     return
             except Exception:
                 return
@@ -3340,11 +3906,28 @@ class App:
                 got = latex.normalize_answer(txt)
                 if exp and got and (exp == got or exp in got):
                     return True
+        # 最后兜底：有些 eqEditor 只认 Input.insertText
+        for _ in range(4):
+            try:
+                drv.focus_field(fid)
+                time.sleep(0.2)
+                drv.clear_field()
+                time.sleep(0.2)
+                drv.insert(latex.to_paste_input(text))
+                time.sleep(0.8)
+                txt = drv.field_text(fid)
+                exp = latex.normalize_answer(text)
+                got = latex.normalize_answer(txt)
+                if exp and got and (exp == got or exp in got):
+                    return True
+            except Exception:
+                pass
         return False
 
 
     def _ask_cancellable(self, base: str, api_key: str, model: str, msgs: list,
-                         ctx: dict, timeout: float = 120.0) -> str:
+                         ctx: dict, timeout: float = 120.0,
+                         temperature: float = 0.2) -> str:
         """可被「收工」立即打断的模型调用：流式收集，cancel 用 web_stop。"""
         buf: list[str] = []
 
@@ -3354,7 +3937,7 @@ class App:
         res = llm.chat_stream(
             base, api_key, model, msgs,
             reasoning_effort=ctx.get("effort"),
-            temperature=0.2,
+            temperature=temperature,
             extra_body=ctx.get("extra") or None,
             timeout=timeout,
             on_delta=on_delta,
@@ -3362,15 +3945,273 @@ class App:
         )
         return (res.text or "".join(buf) or "").strip()
 
+    @staticmethod
+    def _web_part_text(text: str, n: int) -> str:
+        if n <= 0:
+            return text or ""
+        try:
+            m = re.search(rf"Part\s+{n}\b(.*?)(?=Part\s+{n + 1}\b|\Z)",
+                          text or "", re.S | re.I)
+            return (m.group(1) if m else (text or ""))
+        except Exception:
+            return text or ""
+
+    @staticmethod
+    def _web_clip(s: str, limit: int) -> str:
+        s = s or ""
+        if len(s) <= limit:
+            return s
+        head = max(200, limit - 500)
+        return s[:head] + "\n……\n" + s[-500:]
+
+    @staticmethod
+    def _web_focus_text(text: str, n: int) -> str:
+        """多小问同页时，只把题干 + 当前小问交给模型，避免它顺手回答旧小问。"""
+        if n <= 0:
+            return text or ""
+        raw = text or ""
+        seg = App._web_part_text(raw, n).strip()
+        stem = ""
+        try:
+            _pieces = re.split(r"Part\s+1\b", raw, maxsplit=2, flags=re.I)
+            if len(_pieces) >= 3:
+                stem = _pieces[1].strip()
+        except Exception:
+            stem = ""
+        if n == 1 and stem and seg.startswith(stem[:60]):
+            seg = seg[len(stem):].lstrip()
+        if not seg or seg == raw:
+            return raw
+        stem = App._web_clip(stem, 1200)
+        seg = App._web_clip(seg, 2000)
+        return (f"当前是第 {n} 小问，只回答这一小问。\n"
+                + (stem + "\n\n" if stem else "") + seg)
+
+    @staticmethod
+    def _web_quadratic_points(text: str, graph: dict) -> list[tuple[float, float]] | None:
+        """从题干里解析二次函数，返回作图所需的三个点。"""
+        poly = None
+        try:
+            funcs = verify_math.extract_functions(text or "")
+            poly = next((f["poly"] for f in funcs if abs(f["poly"][0]) > 1e-9), None)
+        except Exception:
+            poly = None
+        if poly is None:
+            try:
+                poly = verify_math.parse_poly(text or "")
+            except Exception:
+                poly = None
+        if not poly or abs(poly[0]) < 1e-9:
+            return None
+        a, b, c = poly
+        try:
+            xmin = float(graph.get("xmin", -6))
+            xmax = float(graph.get("xmax", 6))
+            ymin = float(graph.get("ymin", -20))
+            ymax = float(graph.get("ymax", 10))
+        except Exception:
+            xmin, xmax, ymin, ymax = -6, 6, -20, 10
+        vx = -b / (2 * a)
+        vy = verify_math.poly_eval(poly, vx)
+        for delta in (1.0, 0.5, 2.0, 0.25):
+            pts = [(vx, vy),
+                   (vx - delta, verify_math.poly_eval(poly, vx - delta)),
+                   (vx + delta, verify_math.poly_eval(poly, vx + delta))]
+            if all(xmin - 1e-6 <= x <= xmax + 1e-6 and ymin - 1e-6 <= y <= ymax + 1e-6
+                   for x, y in pts):
+                return [(round(x, 4), round(y, 4)) for x, y in pts]
+        return None
+
+    @staticmethod
+    def _web_poly(expr: str):
+        """返回 (a,b,c) 或 None；统一转给 verify_math.parse_poly。"""
+        try:
+            return verify_math.parse_poly(expr)
+        except Exception:
+            return None
+
+    @staticmethod
+    def _web_graph_objects(text: str, graph: dict) -> list[dict]:
+        """从题干里找 R(x)/C(x)/y= 等函数，生成 GraphControl 对象。"""
+        try:
+            funcs = verify_math.extract_functions(text or "")
+        except Exception:
+            funcs = []
+        try:
+            xmin, xmax = float(graph.get("xmin", -6)), float(graph.get("xmax", 6))
+            ymin, ymax = float(graph.get("ymin", -20)), float(graph.get("ymax", 10))
+        except Exception:
+            xmin, xmax, ymin, ymax = -6, 6, -20, 10
+        if xmax <= xmin:
+            xmin, xmax = -6, 6
+        if ymax <= ymin:
+            ymin, ymax = -20, 10
+        objs = []
+        for fn in funcs:
+            a, b, c = fn["poly"]
+            if abs(a) > 1e-9:
+                vx = -b / (2 * a)
+                vy = verify_math.poly_eval((a, b, c), vx)
+                # 顶点在可见范围内时取顶点 ± 2；否则在可见区间均匀取三点
+                d = 2.0
+                if not (xmin <= vx - d and vx + d <= xmax):
+                    xs = [xmin, (xmin + xmax) / 2.0, xmax]
+                else:
+                    xs = [vx, vx - d, vx + d]
+                pts = [(x, verify_math.poly_eval((a, b, c), x)) for x in xs]
+                objs.append({"objectType": "quadratic",
+                             "points": [{"x": round(x, 3), "y": round(y, 3)} for x, y in pts],
+                             "params": {}})
+            else:
+                # 线性：优先取图形范围两端；超出 y 范围时按 y 范围截取
+                pts = [(xmin, b * xmin + c), (xmax, b * xmax + c)]
+                ys = [p[1] for p in pts]
+                if abs(b) > 1e-9 and (min(ys) < ymin or max(ys) > ymax):
+                    x1 = (ymin - c) / b
+                    x2 = (ymax - c) / b
+                    if x1 > x2:
+                        x1, x2 = x2, x1
+                    lo, hi = max(xmin, x1), min(xmax, x2)
+                    if hi > lo:
+                        pts = [(lo, b * lo + c), (hi, b * hi + c)]
+                objs.append({"objectType": "line",
+                             "points": [{"x": round(x, 3), "y": round(y, 3)} for x, y in pts],
+                             "params": {}})
+        return objs
+
+    def _web_finish_graph_only(self, drv, key: str) -> bool:
+        """图形题只有作图时，画完直接点 Check，不再让文本模型抢答。"""
+        try:
+            st = drv.state() or {}
+        except Exception:
+            st = {}
+        if not st.get("canCheck"):
+            if st.get("hasCheck"):
+                self._web_status("灵梦：图形还没被 Pearson 接受，Check 还是灰的。", "warn")
+            else:
+                self._web_status("灵梦：找不到 Check answer，停在图形题。", "warn")
+            self._web_round_failed = True
+            return False
+        if not self._web_click_check(drv):
+            self._web_status("灵梦：图形题的 Check answer 点不到。", "warn")
+            self._web_round_failed = True
+            return False
+        fb = self._web_feedback(drv)
+        if fb == "correct":
+            self._web_ok += 1
+            self._web_status(f"灵梦：第 {self._web_question} 题答对了。（对 {self._web_ok} / 错 {self._web_fail}）", "ok")
+            try:
+                if drv.dialog_next() and self._web_next(drv, key):
+                    return True
+            except Exception:
+                pass
+            try:
+                self._web_dismiss(drv)
+            except Exception:
+                pass
+            time.sleep(0.7)
+            if self._web_wait_change(drv, key, timeout=15):
+                return True
+            if self._web_next(drv, key):
+                return True
+            if self._web_jump_next_unanswered(drv):
+                return True
+            self._web_status("灵梦：图形题后面没有下一题了。", "ok")
+            return False
+        if fb == "incorrect":
+            self._web_fail += 1
+            self._web_round_failed = True
+            self._web_status("魔理沙：图形题被判错，停在原题检查。", "err")
+            return False
+        # 判分弹窗没出来：先看题号状态
+        try:
+            if self._web_jump_next_unanswered(drv):
+                return True
+        except Exception:
+            pass
+        self._web_status("灵梦：图形题没看到判分，停在原题。", "warn")
+        self._web_round_failed = True
+        return False
+
     def _web_step(self, drv: "web.WebPlayer") -> bool:
         """处理一道题。返回 False 表示该停了（做完/被卡住）。"""
         st = drv.state()
+        # 整份作业每一题都已判过分（含 part 0.4 的 Partially correct）：不再动页面，
+        # 避免重启后把已经提交的答案又重填一遍，甚至把部分题改坏。
+        try:
+            _qs0 = [q for q in (st.get("questions") or []) if int(q.get("n") or 0) > 0]
+            _kinds0 = [self._web_status_kind(q.get("status")) for q in _qs0]
+            if _qs0 and all(k in ("correct", "incorrect", "partial") for k in _kinds0):
+                self._web_all_done = True
+                if not self._web_ok and not self._web_fail:
+                    self._web_ok = _kinds0.count("correct")
+                    self._web_fail = sum(1 for k in _kinds0
+                                         if k in ("incorrect", "partial"))
+                self._web_status(
+                    f"灵梦：整份作业都处理完了（对 {self._web_ok} / 错 {self._web_fail}）。", "ok")
+                return False
+        except Exception:
+            pass
+        # 图形题会先出图、后出选项/输入框；先等控件加载，避免拿空状态去问模型
+        if st.get("graph") and not (
+                st.get("fields") or st.get("inputs") or st.get("radios")
+                or st.get("checks") or st.get("selects") or st.get("dropdowns")):
+            for _wait in range(10):
+                time.sleep(0.45)
+                st2 = drv.state()
+                if st2 and (st2.get("fields") or st2.get("inputs") or st2.get("radios")
+                            or st2.get("checks") or st2.get("selects") or st2.get("dropdowns")):
+                    st = st2
+                    break
+        # 严格字段 inventory：页面渲染出的答题控件必须全部被快照捕获。
+        # 少一个就说明还有控件没识别（诱饵框/自定义控件/异步加载），此时绝不
+        # 让模型盲答——刷新几次仍不完整就记账跳过，留给人工。
+        try:
+            if st.get("incomplete"):
+                _inv = st.get("inventory") or {}
+                self._web_status(
+                    f"魔理沙：页面控件没认全（渲染 {_inv.get('rendered')} / 捕获 "
+                    f"{_inv.get('captured')}，缺组 {_inv.get('missing')}），先刷新再读…",
+                    "info")
+                for _retry in range(3):
+                    time.sleep(0.8)
+                    st2 = drv.state() or {}
+                    if not st2.get("incomplete"):
+                        st = st2
+                        break
+                else:
+                    self._web_status(
+                        "魔理沙：控件清单仍不完整，这题不盲答，记待人工后跳下一题。",
+                        "warn")
+                    return self._web_skip(drv, self._web_key(st) if st else "")
+        except Exception:
+            pass
         key = self._web_key(st) if st else ""
+        # 当前题已经答对：不要死等 Next，直接找下一道没答完的题
+        try:
+            _qno = int(st.get("qno") or 0)
+            _q = next((x for x in (st.get("questions") or [])
+                       if int(x.get("n") or 0) == _qno), None)
+            _fb_open = ""
+            try:
+                _fb_open = (drv.feedback() or "").strip()
+            except Exception:
+                _fb_open = ""
+            if _q and not _fb_open and self._web_done_status(_q.get("status")):
+                if self._web_jump_next_unanswered(drv, st):
+                    return True
+                self._web_status(
+                    f"灵梦：第 {_qno} 题已答过，后面也没有未完成的题了。", "ok")
+                return False
+            if _q and not _fb_open and not self._web_done_status(_q.get("status")):
+                if self._web_jump_first_unfinished(drv, st):
+                    return True
+        except Exception:
+            pass
         # 多小问没做完却点了下一题时，Pearson 会弹「确定离开本题吗」——选 No
         try:
             if drv.leave_prompt():
-                self._web_status("灵梦：弹出了「确定离开本题吗」，先点 No 留下来…", "info")
-                drv.click_text(r"^\s*no\s*$")
+                self._web_leave_if_prompt(drv, allow=False)
                 time.sleep(0.8)
                 return True
         except Exception:
@@ -3391,18 +4232,31 @@ class App:
 
         if fb_open and key in self._web_seen:
             self._web_status("灵梦：上一题的判分弹窗还开着，先处理掉…", "info")
+            pv = st.get("part") or []
+            multi = len(pv) == 2 and 0 < int(pv[0]) < int(pv[1])
+            if multi:
+                # 多小问：只点掉 OK，等下一小问出现；没有出现就停在原题，绝不点 Next
+                self._web_dismiss(drv)
+                time.sleep(0.6)
+                if self._web_wait_change(drv, key, timeout=12):
+                    return True
+                self._web_status("灵梦：下一小问没有出现，先停在原题检查。", "warn")
+                self._web_round_failed = True
+                return False
             if drv.dialog_next():
                 clicked = drv.click_text(r"^next( question)?$")
                 if clicked == "ok" and self._web_wait_change(drv, key, timeout=10):
                     return True
             else:
-                # 多小问：弹窗只有 OK，点掉；下一小问出现就继续，否则翻下一题
+                # 单问：点掉弹窗；下一题出现就继续，否则翻下一题
                 self._web_dismiss(drv)
                 time.sleep(0.6)
                 if self._web_wait_change(drv, key, timeout=15):
                     return True
                 if self._web_next(drv, key):
                     return True
+            if self._web_jump_next_unanswered(drv):
+                return True
             self._web_status(
                 f"灵梦：没有下一题了，全自动收工（对 {self._web_ok} / 错 {self._web_fail}）。", "ok")
             return False
@@ -3410,6 +4264,69 @@ class App:
         has_inputs = (bool(st.get("fields")) or bool(st.get("inputs"))
                       or bool(st.get("selects")) or bool(st.get("dropdowns")))
         has_choices = bool(st.get("radios")) or bool(st.get("checks"))
+        has_graph = bool(st.get("graph"))
+        # 图形题：只要当前小问是“画图”而不是选项，画完直接 Check，不交给文本模型
+        if has_graph:
+            try:
+                _pn = int((st.get("part") or [0, 0])[0] or 0)
+            except Exception:
+                _pn = 0
+            _gseg = self._web_part_text(st.get("text") or "", _pn).lower()
+            _graph_only = any(k in _gseg for k in (
+                "graph the parabola", "graph both functions", "graph the functions",
+                "use the graphing tool", "use the graphing tool to graph"))
+            # 有些题既画图又同时有顶点/截距填空，必须交给模型一起答；
+            # 只有“纯画图题”才走快速通道。
+            if _graph_only and not has_inputs and not has_choices:
+                if key not in self._web_graph_done:
+                    _graph = st.get("graph") or {}
+                    _objs = self._web_graph_objects(st.get("text") or "", _graph)
+                    if _objs:
+                        self._web_status("灵梦：正在用图形工具画函数…", "info")
+                        try:
+                            _res = (drv.add_graph_objects_inline(_objs)
+                                    if hasattr(drv, "add_graph_objects_inline")
+                                    else drv.add_graph_objects(_objs))
+                            if str(_res) != "ok":
+                                _res = drv.add_graph_objects(_objs)
+                        except Exception as e:
+                            _res = f"exception:{e}"
+                    else:
+                        _pts = self._web_quadratic_points(_gseg, _graph)
+                        if not _pts:
+                            self._web_status("灵梦：图形题解析不出函数，停在原题。", "warn")
+                            self._web_round_failed = True
+                            return False
+                        self._web_status("灵梦：正在用图形工具画抛物线…", "info")
+                        _objq = [{"objectType": "quadratic",
+                                  "points": [{"x": round(x, 3), "y": round(y, 3)}
+                                             for x, y in _pts], "params": {}}]
+                        try:
+                            _res = (drv.add_graph_objects_inline(_objq)
+                                    if hasattr(drv, "add_graph_objects_inline")
+                                    else drv.draw_quadratic(_pts))
+                            if str(_res) != "ok":
+                                _res = drv.draw_quadratic(_pts)
+                        except Exception as e:
+                            _res = f"exception:{e}"
+                    if str(_res) != "ok":
+                        self._web_status(f"魔理沙：图形没画成（{_res}），停在原题。", "warn")
+                        self._web_round_failed = True
+                        return False
+                    self._web_graph_done.add(key)
+                    self._web_status("灵梦：图形已画好。", "ok")
+                    # 内嵌图有些 Pearson 版本只画图不提交；Check 还是灰的就改用放大弹窗重画并 Save
+                    try:
+                        _st2 = drv.state() or {}
+                        if _st2.get("hasCheck") and _st2.get("canCheck") is False and _objs:
+                            self._web_status("灵梦：Check 还是灰的，改用放大图形框重画一次…", "warn")
+                            _res2 = drv.add_graph_objects(_objs)
+                            if str(_res2) == "ok":
+                                self._web_status("灵梦：图形已在放大框里保存。", "ok")
+                                time.sleep(1.2)
+                    except Exception:
+                        pass
+                return self._web_finish_graph_only(drv, key)
 
         # 登录过期 / 人机验证：不要傻等
         low_text = (st.get("text") or "").lower()
@@ -3421,7 +4338,7 @@ class App:
             self._web_round_failed = True
             return False
 
-        if not st or (not has_inputs and not has_choices):
+        if not st or (not has_inputs and not has_choices and not has_graph):
             now = time.time()
             if getattr(self, "_web_empty_since", 0) == 0:
                 self._web_empty_since = now
@@ -3435,9 +4352,19 @@ class App:
         self._web_empty_since = 0
 
         if key in self._web_seen:
-            self._web_status("灵梦：这题处理过了，等下一题…")
-            return True
-        if not st.get("radios") and st.get("radios_disabled"):
+            self._web_status("灵梦：这题处理过了，等页面变化…")
+            if self._web_wait_change(drv, key, timeout=8.0):
+                return True
+            _qs = [q for q in (st.get("questions") or []) if int(q.get("n") or 0) > 0]
+            if _qs and all(self._web_q_done(q) for q in _qs):
+                self._web_all_done = True
+                self._web_status(
+                    f"灵梦：全部题都处理完了（对 {self._web_ok} / 错 {self._web_fail}）。", "ok")
+                return False
+            # 同一题反复处理又不动：先入账再跳，绝不能卡死，也不能静默漏题。
+            self._web_status("灵梦：页面一直没变化，这题先记待人工，自动继续下一题。", "warn")
+            return self._web_skip(drv, key)
+        if not has_inputs and not has_choices and not has_graph and st.get("radios_disabled"):
             self._web_status("灵梦：这页选项是禁用的（Review 页），试试能不能翻页…", "warn")
             if self._web_next(drv, key):
                 return True
@@ -3450,6 +4377,17 @@ class App:
         if not _is_retry:
             self._web_question += 1
         text = (st.get("text") or "").strip()
+        # 公式补读：MathML/KaTeX/MathJax 的可读文本常常不在 innerText 里（学自 Auto-Pearson）
+        try:
+            _math = drv.math_text()
+        except Exception:
+            _math = []
+        if _math:
+            _missing = [m for m in _math if m not in text]
+            if _missing:
+                _formula = "\n\n【公式】\n" + "\n".join(_missing[:10])
+                st["text"] = text + _formula
+                text += _formula
         if self._web_hint:
             text = self._web_hint + "\n\n" + text
             self._web_hint = ""
@@ -3488,6 +4426,9 @@ class App:
                 seg = ""
             text = (f"当前是第 {part_n} 小问（共 {part_m} 问），只回答这一小问。\n"
                     + (seg + "\n\n" if seg else "") + text)
+        focus_text = self._web_focus_text(st.get("text") or "", part_n)
+        if self._web_hint:
+            focus_text = self._web_hint + "\n\n" + focus_text
         self._web_current_key = key
         self.q.put(("clear", "src"))
         self.q.put(("append", "src", text, "body"))
@@ -3519,67 +4460,122 @@ class App:
         ctx = self._web_ctx
         imgs = st.get("imgs") or []
         use_img = bool(imgs) and bool(ctx.get("vision"))
+        packet = question_reader.build_packet(st, focus_text)
+        self._web_model_fails = getattr(self, "_web_model_fails", 0)
+        spec = {}
         try:
-            if use_img:
-                xs = [i["x"] for i in imgs]
-                ys = [i["y"] for i in imgs]
-                xe = [i["x"] + i["w"] for i in imgs]
-                ye = [i["y"] + i["h"] for i in imgs]
-                x = max(0, min(xs) - 40)
-                y = max(0, min(ys) - 160)
-                w = min(1600, max(xe) - x + 60)
-                h = min(1400, max(ye) - y + 60)
-                png = drv.capture_clip(x, y, w, h)
-                data_url = "data:image/png;base64," + base64.b64encode(png).decode("ascii")
-                msgs = prompts.web_messages_image(text, data_url)
-                model = ctx["vision"]
-                self.q.put(("append", "ans", "（题目含图，已把截图交给视觉模型）\n", "dim"))
-            else:
-                msgs = prompts.web_messages(text)
-                model = ctx["model"]
-            api_base = (ctx.get("vision_base") or ctx["base"]) if use_img else ctx["base"]
-            api_key = (ctx.get("vision_key") or ctx["key"]) if use_img else ctx["key"]
-            spec = {}
-            for _attempt in range(2):
-                raw = self._ask_cancellable(api_base, api_key, model, msgs, ctx)
-                spec = prompts.parse_web_answer(raw)
-                if (spec.get("choices") or spec.get("value") or spec.get("matrix")
-                        or spec.get("drops")):
-                    break
-                time.sleep(0.4)
+            def _ask_engine(msgs, temperature=0.7, tag="sample"):
+                return self._ask_cancellable(
+                    ctx["base"], ctx["key"], ctx["model"], msgs, ctx,
+                    temperature=temperature)
+
+            engine = answer_engine.AnswerEngine(
+                _ask_engine, samples=3, escalate=2, review=True, reasoner=True,
+                on_status=lambda t: self._web_status(t, "info"),
+                cancel=self.web_stop)
+            result = engine.solve(packet)
+            spec = result.spec
+            self.q.put(("append", "ans",
+                        f"（置信度 {result.confidence}，一致度 {result.agreement:.0%}，"
+                        f"验算 {result.verified}）\n", "dim"))
+            self._web_status(f"灵梦：答案置信度 {result.confidence}，"
+                             f"一致度 {result.agreement:.0%}。", "info")
             self._web_model_fails = 0
+        except answer_engine.SolveCancelled:
+            return False
         except Exception as e:
             if self.web_stop.is_set():
                 return False
-            self._web_model_fails = getattr(self, "_web_model_fails", 0) + 1
-            self._web_status(f"魔理沙：问模型失败——{e}（第 {self._web_model_fails} 次）", "err")
-            if self._web_model_fails >= 3:
-                self._web_model_fails = 0
-                self._web_status("魔理沙：连续失败三次，先跳过这题。", "warn")
+            self._web_model_fails += 1
+            self._web_status(f"魔理沙：多路求解失败——{e}（第 {self._web_model_fails} 次）", "err")
+            if use_img:
+                # 文字模型实在答不出时，才把截图交给视觉模型兜底
+                try:
+                    xs = [i["x"] for i in imgs]
+                    ys = [i["y"] for i in imgs]
+                    xe = [i["x"] + i["w"] for i in imgs]
+                    ye = [i["y"] + i["h"] for i in imgs]
+                    x = max(0, min(xs) - 40)
+                    y = max(0, min(ys) - 160)
+                    w = min(1600, max(xe) - x + 60)
+                    h = min(1400, max(ye) - y + 60)
+                    png = drv.capture_clip(x, y, w, h)
+                    data_url = "data:image/png;base64," + base64.b64encode(png).decode("ascii")
+                    self._web_status("灵梦：文字模型答不出，改看题目截图…", "info")
+                    raw = self._ask_cancellable(
+                        ctx.get("vision_base") or ctx["base"],
+                        ctx.get("vision_key") or ctx["key"],
+                        ctx["vision"],
+                        prompts.web_messages_image(text, data_url),
+                        {"effort": None, "extra": ctx["extra"]},
+                    )
+                    spec = prompts.parse_web_answer(raw)
+                except Exception as e2:
+                    self._web_status(f"魔理沙：视觉兜底也失败——{e2}", "warn")
+            if not (spec.get("choices") or spec.get("value") or spec.get("matrix")
+                    or spec.get("drops") or spec.get("values")):
+                if self._web_model_fails >= 3:
+                    self._web_model_fails = 0
+                    self._web_status("魔理沙：连续失败三次，先把这题留给人工。", "warn")
                 return self._web_skip(drv, key)
-            return True
-        if not spec["raw"]:
-            self._web_status("魔理沙：模型没回内容，先跳过这题", "warn")
-            return self._web_skip(drv, key)
 
-        if not (spec.get("choices") or spec.get("value") or spec.get("matrix") or spec.get("drops")) \
-                and not use_img and st.get("rect"):
-            # 文字被拍平得太乱（分段函数等）时，截图给视觉模型再试一次
-            try:
-                self._web_status("灵梦：文字读不懂，改看题目截图…", "info")
-                r = st["rect"]
-                png = drv.capture_clip(r["x"], r["y"], min(1500, r["w"]), min(1200, r["h"]))
-                data_url = "data:image/png;base64," + base64.b64encode(png).decode("ascii")
-                raw = self._ask_cancellable(
-                    ctx.get("vision_base") or ctx["base"],
-                    ctx.get("vision_key") or ctx["key"],
-                    ctx["vision"],
-                    prompts.web_messages_image(text, data_url),
-                    {"effort": None, "extra": ctx["extra"]},
-                )
-                spec = prompts.parse_web_answer(raw)
-            except Exception as e:
-                self._web_status(f"魔理沙：截图兜底失败——{e}", "warn")
+        # 如果模型思考期间又加载出新控件，当前答案可能不完整；用最新状态重算一次
+        try:
+            _live = drv.state() or {}
+            _lf = [f for f in (_live.get("fields") or [])
+                   if not f.get("disabled") and not f.get("readonly")]
+            _li = [i for i in (_live.get("inputs") or [])
+                   if not i.get("disabled") and not i.get("readonly")]
+            _new = bool((_live.get("radios") or _live.get("checks"))
+                        and not spec.get("choices"))
+            _new = _new or bool((_lf or _li or _live.get("selects")
+                                 or _live.get("dropdowns"))
+                                and not (spec.get("values") or spec.get("matrix")
+                                         or spec.get("value") or spec.get("drops")))
+            if _new:
+                self._web_status("魔理沙：选项刚加载出来，按最新页面重算…", "info")
+                st = _live
+                has_inputs = bool(_lf or _li or st.get("selects") or st.get("dropdowns"))
+                has_choices = bool(st.get("radios")) or bool(st.get("checks"))
+                drops = st.get("dropdowns") or []
+                try:
+                    _lp = st.get("part") or [0, 0]
+                    _lpn = int(_lp[0]) if len(_lp) == 2 and _lp[1] else 0
+                except Exception:
+                    _lpn = 0
+                packet2 = question_reader.build_packet(
+                    st, self._web_focus_text(_live.get("text") or text, _lpn))
+                try:
+                    result2 = answer_engine.AnswerEngine(
+                        _ask_engine, samples=2, escalate=1, review=False, reasoner=False,
+                        on_status=lambda t: self._web_status(t, "info"),
+                        cancel=self.web_stop).solve(packet2)
+                    spec = result2.spec
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+        # P0 竞态保护：模型思考期间页面可能已经换题/换控件。此时旧答案
+        # 绝不能填到新页面；丢弃这一轮，下一轮会拿新快照重新求解。
+        try:
+            _guard_st = drv.state() or {}
+            _old_sig = self._web_sig(st)
+            _new_sig = self._web_sig(_guard_st)
+            if _old_sig and _new_sig and _old_sig != _new_sig:
+                self._web_status("灵梦：等答案时页面已经变了，丢掉旧答案重新读题…", "warn")
+                self._web_seen.discard(key)
+                time.sleep(0.5)
+                return True
+            if _guard_st.get("fields") or _guard_st.get("inputs") \
+                    or _guard_st.get("radios") or _guard_st.get("checks"):
+                st = _guard_st
+        except Exception:
+            pass
+
+        if not spec.get("raw"):
+            self._web_status("魔理沙：模型没回内容，先把这题留给人工", "warn")
+            return self._web_skip(drv, key)
 
         _sig_parts = []
         if spec.get("choices"):
@@ -3597,13 +4593,15 @@ class App:
                 self._web_dismiss(drv)
             except Exception:
                 pass
-            # 能翻页就翻页；多小问翻不动就停下，别原地死循环
+            # 能翻页就翻页；多小问翻不动就记待人工、去下一题，绝不死循环
             if not self._web_next(drv, key):
-                self._web_status("魔理沙：这题我算了两遍都一样，先停下，你看看答案再继续。", "warn")
-                return False
+                if self._web_jump_next_unanswered(drv):
+                    return True
+                return self._web_skip(drv, key)
             return True
 
-        if not (spec.get("choices") or spec.get("value") or spec.get("matrix") or spec.get("drops")):
+        if not (spec.get("choices") or spec.get("value") or spec.get("matrix")
+                or spec.get("drops") or spec.get("values")):
             if use_img:
                 self._web_status(
                     "灵梦：视觉模型没答出来——设置里把「视觉模型」配成多模态模型（如 glm-4v-flash），"
@@ -3634,32 +4632,105 @@ class App:
             if picked != "ok":
                 self._web_status(f"魔理沙：选项 {','.join(letters)} 没点上（{picked}），跳过", "warn")
                 return self._web_skip(drv, key)
-            time.sleep(0.5)
+            time.sleep(0.7)
+            # 有些 Pearson 题先选选项才会启用填空框，必须重新读一次当前小问
+            try:
+                _st_after = drv.state() or {}
+                # 即使这题没有填空，也要刷新 st：radio 的 checked 进入 signature，
+                # 不刷新会被下面的 P0 快照闸门误判成“页面又变了”。
+                if _st_after:
+                    st = _st_after
+                    _af = [f for f in (st.get("fields") or [])
+                           if not f.get("disabled") and not f.get("readonly")]
+                    _ai = [i for i in (st.get("inputs") or [])
+                           if not i.get("disabled") and not i.get("readonly")]
+                    has_inputs = bool(_af or _ai or st.get("selects") or st.get("dropdowns"))
+                    has_choices = bool(st.get("radios")) or bool(st.get("checks"))
+                    drops = st.get("dropdowns") or []
+            except Exception:
+                pass
+
+        # P0：填任何控件前再核对一次快照。Pearson 在选项加载/小问切换时
+        # 经常替换 DOM；如果控件 UID/签名已经变了，旧答案必须丢弃重读。
+        if not self._web_snapshot_intact(drv, st):
+            self._web_status("灵梦：控件在填写前又变了，丢掉这轮答案重新读题…", "warn")
+            self._web_seen.discard(key)
+            time.sleep(0.4)
+            return True
 
         # ---- Pearson 下拉框（xlFillinItem）：可以和填空同时存在
         boxes = st.get("fields") or st.get("inputs")
         if drops and spec.get("drops"):
+            # 只把“真的有选项”的下拉框算进来；旧小问留下的空下拉框会打乱编号
+            active = []
+            for _dd in drops:
+                try:
+                    drv.dropdown_open(_dd["id"])
+                    time.sleep(0.45)
+                    _opts = drv.dropdown_options()
+                    drv.dropdown_close()
+                    if _opts:
+                        active.append(_dd)
+                except Exception:
+                    try:
+                        drv.dropdown_close()
+                    except Exception:
+                        pass
             picked = 0
-            for _i, _dd in enumerate(drops):
+            for _i, _dd in enumerate(active):
                 if _i >= len(spec["drops"]):
                     continue
                 try:
                     idx = int(spec["drops"][_i]) - 1
                 except Exception:
                     continue
-                drv.dropdown_open(_dd["id"])
-                time.sleep(0.3)
-                r = drv.dropdown_pick(idx)
-                time.sleep(0.4)
-                drv.dropdown_close()
-                if r == "ok":
-                    picked += 1
-            need = min(len(drops), len(spec["drops"]))
-            if picked < need:
+                for _try in range(3):
+                    try:
+                        drv.dropdown_open(_dd["id"])
+                        time.sleep(0.4)
+                        r = drv.dropdown_pick(idx)
+                        time.sleep(0.4)
+                        drv.dropdown_close()
+                        if r == "ok":
+                            picked += 1
+                            break
+                    except Exception:
+                        try:
+                            drv.dropdown_close()
+                        except Exception:
+                            pass
+                        time.sleep(0.4)
+            need = min(len(active), len(spec["drops"]))
+            if need and picked < need:
                 self._web_status(
-                    f"魔理沙：下拉框只选中 {picked}/{need}，先跳过这题", "warn")
-                return self._web_skip(drv, key)
-            self.q.put(("append", "ans", "已选下拉框\n", "dim"))
+                    f"魔理沙：下拉框只选中 {picked}/{need}，再等一会儿重试…", "warn")
+                time.sleep(1.5)
+                # 再试一次空下拉框
+                for _i, _dd in enumerate(active):
+                    if _i >= len(spec["drops"]):
+                        continue
+                    try:
+                        idx = int(spec["drops"][_i]) - 1
+                    except Exception:
+                        continue
+                    try:
+                        drv.dropdown_open(_dd["id"])
+                        time.sleep(0.5)
+                        r = drv.dropdown_pick(idx)
+                        time.sleep(0.4)
+                        drv.dropdown_close()
+                        if r == "ok":
+                            picked += 1
+                    except Exception:
+                        pass
+                if picked < need:
+                    self._web_status(
+                        f"魔理沙：下拉框 {picked}/{need} 还是没选上，停在原题重试。", "warn")
+                    self._web_round_failed = True
+                    self._web_seen.discard(key)
+                    return False
+            if need:
+                self.q.put(("append", "ans", "已选下拉框\n", "dim"))
 
         # ---- 原生下拉框（select）：可能不止一个
         if st.get("selects"):
@@ -3691,6 +4762,10 @@ class App:
         # ---- 填空
         if has_inputs and boxes and (spec["matrix"] or spec.get("values") or spec["value"]):
             targets = self._web_targets(st, part_n)
+            _blank = [b for b in targets
+                      if "enter your response" in str(b.get("label") or "").lower()]
+            if _blank:
+                targets = _blank + [b for b in targets if b not in _blank]
             vals = spec.get("values") or ([spec["value"]] if spec["value"] else [])
 
             if spec["matrix"]:
@@ -3707,10 +4782,11 @@ class App:
                 self.q.put(("append", "ans", "已填入矩阵\n", "dim"))
 
             elif len(vals) > 1:
-                if len(targets) < len(vals):
+                _only = _blank or targets
+                if len(_only) < len(vals):
                     self._web_status("魔理沙：空框不够，跳过这题", "warn")
                     return self._web_skip(drv, key)
-                for b, v in zip(targets[:len(vals)], vals):
+                for b, v in zip(_only[:len(vals)], vals):
                     if not self._web_fill(drv, b["id"], v):
                         self._web_status("魔理沙：多空答案没填全，先跳过", "warn")
                         return self._web_skip(drv, key)
@@ -3726,6 +4802,59 @@ class App:
                     return self._web_skip(drv, key)
                 self.q.put(("append", "ans", "已填入：" + str(drv.field_label(fid))[:60] + "\n", "dim"))
 
+        # ---- 图形题：用 Pearson 的 GraphControl API 画二次函数
+        if has_graph:
+            try:
+                _pn, _pm = (st.get("part") or [0, 0])[:2]
+                _seg = self._web_part_text(st.get("text") or "", int(_pn or 0)).lower()
+            except Exception:
+                _seg = (st.get("text") or "").lower()
+            _need_graph = any(k in _seg for k in (
+                "graph the parabola", "graph both", "graph the functions",
+                "graph the equation", "use the graphing tool", "graph f",
+                "graph y"))
+            if _need_graph:
+                if key not in self._web_graph_done:
+                    _graph = st.get("graph") or {}
+                    _multi = ("graph both functions" in _seg
+                              or "graph the functions" in _seg
+                              or "graph both" in _seg)
+                    _objs = self._web_graph_objects(st.get("text") or "", _graph) if _multi else []
+                    if _objs:
+                        self._web_status("灵梦：正在用图形工具画两条函数…", "info")
+                        try:
+                            _res = drv.add_graph_objects(_objs)
+                        except Exception as e:
+                            _res = f"exception:{e}"
+                    else:
+                        _pts = self._web_quadratic_points(_seg, _graph)
+                        if not _pts:
+                            self._web_status(
+                                "灵梦：这道图形题的公式没解析出来，停在原题。", "warn")
+                            self._web_round_failed = True
+                            return False
+                        self._web_status("灵梦：正在用图形工具画抛物线…", "info")
+                        try:
+                            _res = drv.draw_quadratic(_pts)
+                        except Exception as e:
+                            _res = f"exception:{e}"
+                    if str(_res) != "ok":
+                        self._web_status(
+                            f"魔理沙：图形没画成（{_res}），停在原题。", "warn")
+                        self._web_round_failed = True
+                        return False
+                    self._web_graph_done.add(key)
+                    self._web_status("灵梦：图形已画好。", "ok")
+                    # Pearson 保存图形后 Check 有时延迟 1~3 秒才启用，等它一下
+                    for _wait in range(10):
+                        try:
+                            _stg = drv.state() or {}
+                        except Exception:
+                            _stg = {}
+                        if not _stg.get("hasCheck") or _stg.get("canCheck") is not False:
+                            break
+                        time.sleep(0.35)
+
         # ---- 交卷（重新读一次：有些题选了答案后 Check 按钮才出现）
         try:
             st_now = drv.state() or st
@@ -3733,14 +4862,36 @@ class App:
             st_now = st
 
         if st_now.get("hasCheck"):
+            if st_now.get("canCheck") is False:
+                self._web_status(
+                    "灵梦：Check 还是灰的，说明还有空没填全；停在原题重来。", "warn")
+                self._web_round_failed = True
+                self._web_seen.discard(key)
+                return False
             self._web_status("灵梦：点 Check answer…", "info")
-            _clicked = drv.click_text(r"^(check answer|final check)$")
-            if _clicked != "ok":
-                self._web_status("灵梦：Check 按钮点不到（可能还没启用），先跳过这题", "warn")
-                return self._web_skip(drv, key)
+            if not self._web_click_check(drv):
+                # 再给 Pearson 一次渲染时间，避免刚换题时误判
+                time.sleep(1.2)
+                if not self._web_click_check(drv):
+                    self._web_status("灵梦：Check 按钮一直没出现，停在原题等一下。", "warn")
+                    self._web_round_failed = True
+                    return False
             fb = self._web_feedback(drv)
+            if not fb:
+                # 有时第一次点击被页面吞掉；按钮还在就再点一次
+                try:
+                    if (drv.state() or {}).get("hasCheck"):
+                        self._web_status("灵梦：没等到判分，再点一次 Check answer…", "warn")
+                        try:
+                            drv.click_text_native(r"^(check answer|final check)$")
+                        except Exception:
+                            self._web_click_check(drv)
+                        fb = self._web_feedback(drv, timeout=10.0)
+                except Exception:
+                    pass
             if fb == "correct":
                 self._web_ok += 1
+                self._web_round_failed = False
                 self._web_status(
                     f"灵梦：第 {self._web_question} 题答对了。（对 {self._web_ok} / 错 {self._web_fail}）", "ok")
                 if st_now.get("inDialog"):
@@ -3755,6 +4906,8 @@ class App:
                 if self._web_wait_change(drv, key, timeout=15):
                     return True
                 if self._web_next(drv, key):
+                    return True
+                if self._web_jump_next_unanswered(drv):
                     return True
                 self._web_status(
                     f"灵梦：没有下一题了，全自动收工（对 {self._web_ok} / 错 {self._web_fail}）。", "ok")
@@ -3797,16 +4950,37 @@ class App:
                 return True
 
             drv.click_text(r"^\s*ok\s*$")
-            self._web_status("灵梦：没看到判分结果，先跳过这题", "warn")
-            self._web_next(drv, key)
-            return self._web_skip(drv, key)
+            self._web_status("灵梦：没看到判分结果，先检查题目标记…", "warn")
+            try:
+                for _ in range(3):
+                    if self._web_jump_next_unanswered(drv):
+                        return True
+                    time.sleep(0.7)
+            except Exception:
+                pass
+            self._web_status(
+                "灵梦：没看到判分结果，停在原题检查，不跳题。", "warn")
+            self._web_round_failed = True
+            return False
         if st_now.get("hasNext"):
+            try:
+                _qn = int(st_now.get("qno") or 0)
+                _q = next((x for x in (st_now.get("questions") or [])
+                           if int(x.get("n") or 0) == _qn), None)
+                if _q and "partial" in str(_q.get("status") or "").lower():
+                    self._web_mark_partial_done(_qn)
+            except Exception:
+                pass
             self._web_status("灵梦：这题没有 Check answer，直接下一题", "info")
             if not self._web_next(drv, key):
                 time.sleep(1.2)
-                self._web_next(drv, key)
+                if not self._web_next(drv, key) and not self._web_jump_next_unanswered(drv):
+                    self._web_status("灵梦：翻不到下一题，停在原题。", "warn")
+                    return False
             return True
 
+        if self._web_jump_next_unanswered(drv):
+            return True
         self._web_status(
             f"灵梦：没有下一题了，全自动收工（对 {self._web_ok} / 错 {self._web_fail}）。", "ok")
         return False
@@ -4060,9 +5234,11 @@ class App:
     def _rotate_quote(self) -> None:
         """闲着的时候，让灵梦和魔理沙轮流说两句。"""
         try:
-            if not self.busy and not self.auto_var.get():
-                self._quote_idx = (getattr(self, "_quote_idx", -1) + 1) % len(QUOTES)
-                self._status(QUOTES[self._quote_idx], "info")
+            if not self.busy and not self.auto_var.get() and not getattr(self, "web_on", False):
+                cur = self.status_var.get().strip()
+                if cur in QUOTES or cur in ("", TIPS["ready"]):
+                    self._quote_idx = (getattr(self, "_quote_idx", -1) + 1) % len(QUOTES)
+                    self._status(QUOTES[self._quote_idx], "info")
         finally:
             self.root.after(14000, self._rotate_quote)
 
@@ -4146,7 +5322,7 @@ def make_splash(root: tk.Tk) -> tuple[tk.Toplevel, object] | None:
             _splash_text(640, 62, "符卡作业簿", "#fffaf6", ("KaiTi", 38, "bold"))
             _splash_text(640, 108, "～ 幻想郷・宿題退治 ～", theme.NEW_COLORS["gold"],
                          ("Yu Gothic UI", 14))
-            _splash_text(640, 690, f"v{settings.APP_VERSION}  ·  Shinichi & Fastrof  ·  MIT License",
+            _splash_text(640, 690, f"v{settings.APP_VERSION}  ·  Shinichi · Fastrof · 会哈气の祥  ·  MIT License",
                          "#e3d8ea", ("Microsoft YaHei UI", 10))
             try:
                 top.focus_force()
