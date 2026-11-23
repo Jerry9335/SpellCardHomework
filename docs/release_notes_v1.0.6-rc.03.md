@@ -43,8 +43,8 @@
 ## 下载
 
 - 安装包：`SpellCardHomework-Setup-1.0.6-rc.03.exe`
-- 大小：62,763,853 字节（约 59.9 MiB）
-- SHA256：`b549860b9a57a20fcb935d3d275fe6de9af88bc07cd59f95bb0095e411fd11a4`
+- 大小：62,767,879 字节（约 59.9 MiB）
+- SHA256：`e215c5d22de899c01c812a914df56ae882f77a9d493830ea81d40778d9252dfb`
 - 系统要求：Windows 10 / 11（x64）
 - 安装包不含源码；源码由作者保留。
 

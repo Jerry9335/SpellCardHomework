@@ -154,8 +154,30 @@ class SetupWizard(tk.Toplevel):
         self.left = tk.Frame(body, bg=self.panel, width=244, height=520)
         self.left.pack(side="left", fill="y", padx=(0, 18))
         self.left.pack_propagate(False)
-        self.content = tk.Frame(body, bg=self.bg)
-        self.content.pack(side="left", fill="both", expand=True)
+        right = tk.Frame(body, bg=self.bg)
+        right.pack(side="left", fill="both", expand=True)
+        self._scroll = tk.Canvas(right, bg=self.bg, highlightthickness=0, bd=0)
+        self._scroll.pack(side="left", fill="both", expand=True)
+        style = ttk.Style(self)
+        try:
+            style.configure("Setup.Vertical.TScrollbar",
+                            background=self.panel2, troughcolor=self.bg,
+                            bordercolor=self.bg, arrowcolor=self.gold,
+                            darkcolor=self.panel2, lightcolor=self.panel2,
+                            relief="flat")
+        except tk.TclError:
+            pass
+        self._scrollbar = ttk.Scrollbar(
+            right, orient="vertical", command=self._scroll.yview,
+            style="Setup.Vertical.TScrollbar",
+        )
+        self._scroll.configure(yscrollcommand=self._scrollbar.set)
+        self.content = tk.Frame(self._scroll, bg=self.bg)
+        self._content_window = self._scroll.create_window(
+            (0, 0), window=self.content, anchor="nw")
+        self.content.bind("<Configure>", self._sync_scroll_region)
+        self._scroll.bind("<Configure>", self._sync_scroll_region)
+        self.bind("<MouseWheel>", self._on_mousewheel)
 
         foot = tk.Frame(self, bg=self.bg)
         foot.pack(fill="x", padx=26, pady=(0, 18))
@@ -166,6 +188,34 @@ class SetupWizard(tk.Toplevel):
         self.hint_var = tk.StringVar()
         tk.Label(self.foot_left, textvariable=self.hint_var, bg=self.bg, fg=self.muted,
                  font=(self.F_UI, 9), anchor="w").pack(side="left")
+
+    def _sync_scroll_region(self, _event=None) -> None:
+        """内容比可视区高时显示滚动条；否则隐藏，避免无意义的滚动槽。"""
+        try:
+            self.content.update_idletasks()
+            bbox = self._scroll.bbox("all")
+            if not bbox:
+                return
+            self._scroll.configure(scrollregion=bbox)
+            self._scroll.itemconfigure(self._content_window,
+                                       width=max(1, self._scroll.winfo_width()))
+            need = bbox[3] > self._scroll.winfo_height() + 1
+            if need and not self._scrollbar.winfo_ismapped():
+                self._scrollbar.pack(side="right", fill="y")
+            elif not need and self._scrollbar.winfo_ismapped():
+                self._scrollbar.pack_forget()
+        except tk.TclError:
+            pass
+
+    def _on_mousewheel(self, event) -> None:
+        try:
+            bbox = self._scroll.bbox("all")
+            if not bbox or bbox[3] <= self._scroll.winfo_height() + 1:
+                return
+            delta = -1 if event.delta > 0 else 1
+            self._scroll.yview_scroll(delta * 2, "units")
+        except tk.TclError:
+            pass
 
     def _button(self, parent, text, command, primary=False, width=14):
         return tk.Button(
@@ -221,6 +271,14 @@ class SetupWizard(tk.Toplevel):
             self._page_key()
         else:
             self._page_models()
+        self.after_idle(self._reset_scroll)
+
+    def _reset_scroll(self) -> None:
+        try:
+            self._scroll.yview_moveto(0.0)
+            self._sync_scroll_region()
+        except tk.TclError:
+            pass
 
     # ------------------------------------------------------------------ page 1
     def _page_provider(self) -> None:
@@ -273,7 +331,10 @@ class SetupWizard(tk.Toplevel):
         self._paint_provider_selection()
         self._render_foot(primary="就借这家 →", on_primary=self._to_key,
                           secondary="之后再配", on_secondary=lambda: self._finish(skip_setup=True))
-        self.hint_var.set("本地来源不需要咒语：只要 Ollama / LM Studio 已经开着，就能直接借灵力。")
+        if getattr(self, "_more_open", False):
+            self.hint_var.set("更多提供商已展开——用滚轮查看全部，选好后进入下一步。")
+        else:
+            self.hint_var.set("本地来源不需要咒语：只要 Ollama / LM Studio 已经开着，就能直接借灵力。")
 
     def _paint_radio(self, canvas: tk.Canvas, selected: bool) -> None:
         canvas.delete("all")

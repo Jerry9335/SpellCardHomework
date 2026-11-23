@@ -45,6 +45,8 @@ def main() -> None:
     time.sleep(0.4)
     wiz = app._setup_win
     _grab_widget(wiz, "impl_setup_1_provider.png")
+    wiz._toggle_more()
+    _grab_widget(wiz, "impl_setup_1_more.png")
     wiz._show_step(2)
     _grab_widget(wiz, "impl_setup_2_key.png")
     wiz._show_step(3)
