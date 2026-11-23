@@ -7,6 +7,9 @@ import tkinter as tk
 
 from PIL import Image, ImageDraw, ImageGrab, ImageTk
 
+_ASSETS_FALLBACK = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets")
+
 STEPS = [
     {
         "key": "kaguya", "role": "月之公主 · 永远亭",
@@ -71,7 +74,7 @@ class OnboardingWizard(tk.Toplevel):
         super().__init__(app.root)
         self.app = app
         self.on_progress = on_progress
-        self.assets = getattr(app, "assets_dir", os.path.join(getattr(app, "HERE", ""), "assets"))
+        self.assets = getattr(app, "ASSETS", getattr(app, "assets_dir", _ASSETS_FALLBACK))
         self.on_finish = on_finish or (lambda _skipped=False: None)
         self.bg = "#0f0b1b"
         self.panel = "#171224"

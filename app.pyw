@@ -145,6 +145,9 @@ def _pick_font(root: tk.Misc, candidates: list[str], fallback: str) -> str:
 class App:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
+        self.HERE = HERE
+        self.ASSETS = ASSETS
+        self.assets_dir = ASSETS
         self.cfg = settings.load()
         self.theme = str(self.cfg.get("theme", theme.THEME_CLASSIC))
         if self.theme == theme.THEME_NEW and (
@@ -263,7 +266,9 @@ class App:
 
     # ------------------------------------------------------------------ 基础
     def _resolve_fonts(self) -> None:
-        self.F_TITLE = _pick_font(self.root, ["华文行楷", "楷体", "Microsoft YaHei UI"], "Microsoft YaHei UI")
+        # 华文行楷缺“麗/郷/題”等字，Tk 会逐字回退成黑体，标题会一半行楷一半黑体。
+        # 楷体字形完整，作为标题字体可以保证整行统一。
+        self.F_TITLE = _pick_font(self.root, ["楷体", "华文行楷", "Microsoft YaHei UI"], "Microsoft YaHei UI")
         self.F_JP = _pick_font(self.root, ["Yu Gothic UI", "Yu Gothic", "Microsoft YaHei UI"], "Microsoft YaHei UI")
         self.F_UI = "Microsoft YaHei UI"
         self.F_TEXT = ("Microsoft YaHei UI", 12)

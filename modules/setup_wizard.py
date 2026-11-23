@@ -58,6 +58,9 @@ _DEFAULT_MODELS = {
     "本地 LM Studio": ["local-model"],
 }
 
+_ASSETS_FALLBACK = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets")
+
 _AVATARS = {
     "yukari": "yukari",
     "eirin": "eirin",
@@ -84,7 +87,7 @@ class SetupWizard(tk.Toplevel):
         super().__init__(app.root)
         self.app = app
         self.on_progress = on_progress
-        self.assets = getattr(app, "ASSETS", os.path.join(getattr(app, "HERE", ""), "assets"))
+        self.assets = getattr(app, "ASSETS", getattr(app, "assets_dir", _ASSETS_FALLBACK))
         self.on_done = on_done
         self.cfg = app.cfg
         self.bg = "#141221"
