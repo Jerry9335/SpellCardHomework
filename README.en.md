@@ -7,7 +7,7 @@
   <img src="https://img.shields.io/badge/windows-0078D6?logo=windows&amp;logoColor=white" alt="Windows 10 / 11" />
   <img src="https://img.shields.io/badge/Python-14354C.svg?logo=python&amp;logoColor=white" alt="Python 3.10+" />
   <img src="https://img.shields.io/badge/License-MIT-e8c46a.svg" alt="MIT License" />
-  <img src="https://img.shields.io/badge/version-1.0.5-c8323c.svg" alt="v1.0.5" />
+  <img src="https://img.shields.io/badge/version-1.0.6--beta2-c8323c.svg" alt="v1.0.6-beta2" />
   <img src="https://img.shields.io/badge/Touhou-Project%20Fan%20Work-c8323c.svg" alt="Touhou Project fan work" />
   <img src="https://img.shields.io/badge/QQ-EB1923?logo=tencent-qq&amp;logoColor=white" alt="QQ" />
   <img src="https://img.shields.io/badge/Gmail-D14836?logo=gmail&amp;logoColor=white" alt="Gmail" />
@@ -145,6 +145,19 @@ docs/                  screenshots and docs
 ```
 
 ## Changelog
+
+### v1.0.6-beta2 (2026-11-23)
+
+- Fixed the auto-mode loop: skipped / partially-correct questions are no longer pulled back forever
+- Fixed the false "run finished" toast after pressing Stop
+- Fixed the question-list tally: `Incorrect` is no longer counted as `Correct`
+- Fixed unlimited 5-day trial by deleting the trial record
+- Too few fill-in values now fail verification instead of submitting with blanks
+- Answer parsing tolerates `CHOICE B`, `**CHOICE**: A` and similar forms
+- Version comparison understands pre-release suffixes, so beta users see same-number releases
+- Formula palette: auto-expand More / go back to page one, scope to the focused field, fall back on matrix-dialog ids
+- Status bar no longer overwritten by random quotes; ledger chart survives missing fonts; minimizing the target window no longer disables auto-watch
+- Added regression test `tools/test_bugfixes_v106.py`
 
 ### v1.0.5 (2026-11-22)
 

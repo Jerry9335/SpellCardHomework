@@ -1,4 +1,4 @@
-﻿"""本地 mock：模拟 OpenAI 兼容平台，用于无外网时的端到端测试。"""
+"""本地 mock：模拟 OpenAI 兼容平台，用于无外网时的端到端测试。"""
 import json
 import sys
 import threading
@@ -19,6 +19,7 @@ TRANS_TEXT = (
     "E. 0 < x < 19\nF. x² ≤ 361\nG. x² < 361\nH. x² ≥ 361"
 )
 WEB_ANSWER = "CHOICE: B\nMATRIX: ->\nVALUE: ->"
+GRAPH_ANSWER = "VALUE: (5,25); 18\nMATRIX: ->\nCHOICE: ->"
 
 ANSWER_TEXT = (
     "【答案】F. $x^2 \\le 361$\n"
@@ -82,6 +83,100 @@ nextBtn.addEventListener('click', function () {
 
 
 
+GRAPH_HTML = """<!doctype html><html><head><meta charset="utf-8"><title>Graph Quiz</title>
+<style>
+body{font-family:sans-serif;padding:16px;width:760px}
+#contentHolderbottom{margin-top:10px}
+.eqEditor{display:inline-block;min-width:130px;height:24px;border:1px solid #999;padding:2px 4px}
+#GraphZoomPopup_1{display:none;position:fixed;left:30px;top:60px;z-index:99;background:#fff;border:2px solid #000;padding:10px}
+#fbDialog{display:none;position:fixed;left:30px;top:400px;background:#fff;padding:12px;border:1px solid #000}
+</style></head><body>
+<div id="contentHoldertop">
+  <p>GRAPHQUIZ: Let C(x) be the cost to produce x batches, and let R(x) be the revenue.</p>
+  <p>R(x) = -x^2 + 10x, C(x) = x + 18</p>
+  <p>(a) Graph both functions. Identify the vertex of R(x).</p>
+  <p>Identify the y-intercept of C(x).</p>
+</div>
+<div id="contentHolderbottom">
+  <div><span class="eqEditor" id="f1" contenteditable="true" aria-label="The vertex of R(x) is at" style="min-width:130px"></span></div>
+  <div><span class="eqEditor" id="f2" contenteditable="true" aria-label="The y-intercept of C(x) is at y=" style="min-width:100px"></span></div>
+  <button id="enlarge">Click to enlarge graph</button>
+  <div class="graphControl" style="width:340px;height:280px;margin-top:8px;background:#eef">
+    <div class="xygraph" id="g1" style="width:340px;height:280px;position:relative">
+      <div data-dojo-props='orientation:"horizontal", minimum:0, maximum:20'></div>
+      <div data-dojo-props='orientation:"vertical", minimum:0, maximum:40'></div>
+    </div>
+  </div>
+</div>
+<div id="GraphZoomPopup_1">
+  <div class="xygraph" id="popGraph" style="width:380px;height:250px;background:#fff"></div>
+  <button id="psave">Save</button>
+</div>
+<div><button id="pageSave">Save</button><button id="check" disabled>Check answer</button><button id="next" style="display:none">Next</button></div>
+<div id="fbDialog" role="dialog"><span id="fbText">Your answer is correct.</span> <button id="ok">OK</button></div>
+<script>
+window.__objects = null;
+window.__saved = false;
+window.__graphValid = false;
+window.__topSaveClicks = 0;
+window.__popupSaveClicks = 0;
+const f1 = document.getElementById('f1'), f2 = document.getElementById('f2');
+const check = document.getElementById('check');
+function updateCheck() {
+  check.disabled = !(f1.innerText.trim() && f2.innerText.trim() && window.__saved);
+}
+function hidePopup() {
+  const p = document.getElementById('GraphZoomPopup_1');
+  if (p) p.style.display = 'none';
+}
+function saveGraph() {
+  window.__popupSaveClicks++;
+  window.__saved = true;
+  hidePopup();
+  updateCheck();
+}
+const mgr = {
+  clearGraphObjects: function () {},
+  initGraphObjects: function (o) { window.__objects = o; window.__graphValid = true; }
+};
+const ctl = {
+  getGraphManager: function () { return mgr; },
+  getGraph: function () { return { validateGraph: function () { window.__graphValid = true; } }; }
+};
+window.dijit = {
+  byId: function (id) {
+    if (id === 'g1' || id === 'popGraph') return {_graphControl: ctl, hide: hidePopup};
+    if (id === 'GraphZoomPopup_1') return {hide: hidePopup};
+    if (id === 'psave') return {onClick: saveGraph};
+    return null;
+  }
+};
+document.getElementById('enlarge').addEventListener('click', function () {
+  document.getElementById('GraphZoomPopup_1').style.display = 'block';
+});
+document.getElementById('pageSave').addEventListener('click', function () {
+  window.__topSaveClicks++;
+});
+document.getElementById('psave').addEventListener('click', saveGraph);
+f1.addEventListener('input', updateCheck);
+f2.addEventListener('input', updateCheck);
+document.getElementById('check').addEventListener('click', function () {
+  const got1 = f1.innerText.replace(/\\s+/g, '');
+  const got2 = f2.innerText.replace(/\\s+/g, '');
+  const good = window.__saved && window.__objects && window.__objects.length >= 2
+    && got1.indexOf('5') >= 0 && got1.indexOf('25') >= 0 && got2.indexOf('18') >= 0;
+  document.getElementById('fbText').textContent =
+    good ? 'Your answer is correct.' : 'Incorrect, try again';
+  document.getElementById('fbDialog').style.display = 'block';
+});
+document.getElementById('ok').addEventListener('click', function () {
+  document.getElementById('fbDialog').style.display = 'none';
+});
+</script>
+</body></html>"""
+
+
+
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
@@ -105,6 +200,9 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self):
+        if self.path.rstrip("/").endswith("/graphquiz"):
+            self._html(GRAPH_HTML)
+            return
         if self.path.rstrip("/").endswith("/quiz"):
             self._html(QUIZ_HTML)
             return
@@ -132,10 +230,12 @@ class Handler(BaseHTTPRequestHandler):
         has_image = "image_url" in joined
         if has_image:
             text = OCR_TEXT
-        elif "CHOICE:" in joined:
-            text = WEB_ANSWER
         elif "翻译" in joined:
             text = TRANS_TEXT
+        elif "C(x)=x+18" in joined.replace(" ", "") or "GRAPHQUIZ" in joined:
+            text = GRAPH_ANSWER
+        elif "CHOICE:" in joined:
+            text = WEB_ANSWER
         else:
             text = ANSWER_TEXT
 

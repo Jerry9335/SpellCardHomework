@@ -176,12 +176,25 @@ def parse_web_answer(raw: str) -> dict:
     """把模型的三行回答解析成 {choice, matrix, value, raw}。"""
     import re
 
+    # 中文模型经常输出全角标点：CHOICE：B / VALUE：42；这里先统一成半角。
+    # 只影响解析，保留原文到 out["raw"] 方便排查。
+    text = (raw or "").translate(str.maketrans({
+        "：": ":", "；": ";", "，": ",", "＝": "=", "　": " ",
+    }))
     out = {"choice": "", "choices": [], "matrix": None, "value": "", "drops": [], "raw": (raw or "").strip()}
-    for line in (raw or "").splitlines():
-        line = line.strip()
+    for line in text.splitlines():
+        line = line.strip().strip("`*# ").strip()
+        if not line:
+            continue
         head, _, body = line.partition(":")
-        head = head.strip().upper()
+        head = re.sub(r"^[\s*`#_]+|[\s*`#_]+$", "", head).strip().upper()
         body = body.strip()
+        if head not in ("CHOICE", "MATRIX", "DROPDOWN", "VALUE"):
+            # 容忍 "CHOICE B"、"**CHOICE**: A"、"CHOICE = B" 这类没冒号/带格式的写法
+            m = re.match(r"^(CHOICE|MATRIX|DROPDOWN|VALUE)\b[\s:：=\-]*(.*)$", line, re.I)
+            if not m:
+                continue
+            head, body = m.group(1).upper(), m.group(2).strip()
         if head == "DROPDOWN":
             out["drops"] = _parse_dropdown_nums(body)
             continue

@@ -75,6 +75,7 @@ try:
 
     status_log = []
     done = False
+    started_at = time.strftime("%Y-%m-%d %H:%M:%S")
     deadline = time.time() + 120
     while time.time() < deadline:
         root.update()
@@ -88,6 +89,19 @@ try:
             break
         time.sleep(0.2)
 
+    # 收工状态有时会在同一个 UI 泵里被“随机闲话”覆盖，日志是更可靠的证据
+    if not done:
+        try:
+            log_path = os.path.join(os.environ.get("APPDATA", ""),
+                                    "SpellCardHomework", "auto.log")
+            with open(log_path, encoding="utf-8") as f:
+                for line in f:
+                    if line[:19] >= started_at and "全自动收工" in line:
+                        status_log.append(line[20:].strip())
+                        done = True
+        except Exception:
+            pass
+
     root.update()
     app._pump()
     ans = app._panel_text("ans")
@@ -100,8 +114,10 @@ try:
     print(app.status_var.get())
 
     q_count = sum(1 for n in (1, 2, 3) if f"【第 {n} 题】" in ans)
-    ok = (done and q_count >= 3 and "对 2" in app.status_var.get()
-          and "错 1" in app.status_var.get() and len(trans.strip()) > 0)
+    # web_off 后状态栏可能立刻被随机闲话覆盖，判定用当时记录到的收工状态
+    done_status = next((s for s in status_log if "收工" in s), app.status_var.get())
+    ok = (done and q_count >= 3 and "对 2" in done_status
+          and "错 1" in done_status and len(trans.strip()) > 0)
     print(f"\n处理题数: {q_count}/3 | 翻译: {'有' if trans.strip() else '无'}")
 
     app.web_var.set(False)

@@ -7,7 +7,7 @@
   <img src="https://img.shields.io/badge/windows-0078D6?logo=windows&amp;logoColor=white" alt="Windows 10 / 11" />
   <img src="https://img.shields.io/badge/Python-14354C.svg?logo=python&amp;logoColor=white" alt="Python 3.10+" />
   <img src="https://img.shields.io/badge/License-MIT-e8c46a.svg" alt="MIT License" />
-  <img src="https://img.shields.io/badge/version-1.0.5-c8323c.svg" alt="v1.0.5" />
+  <img src="https://img.shields.io/badge/version-1.0.6--beta2-c8323c.svg" alt="v1.0.6-beta2" />
   <img src="https://img.shields.io/badge/Touhou-Project%20Fan%20Work-c8323c.svg" alt="Touhou Project fan work" />
   <img src="https://img.shields.io/badge/QQ-EB1923?logo=tencent-qq&amp;logoColor=white" alt="QQ" />
   <img src="https://img.shields.io/badge/Gmail-D14836?logo=gmail&amp;logoColor=white" alt="Gmail" />
@@ -145,6 +145,19 @@ docs/                  截图与文档
 ```
 
 ## 更新日志
+
+### v1.0.6-beta2（2026-11-23）
+
+- 修复全自动模式的死循环：跳过题/部分正确题不再被“回补未完成题”反复拉回
+- 修复点「收工」后仍弹「这一轮退治完了」的假通报
+- 修正题号列表统计：`Incorrect` 不再被当成 `Correct`
+- 修复清空试用记录后可无限重领 5 天试用
+- 填空数量不足时判失败，不再带着空格去 Check
+- 答案解析容忍 `CHOICE B`、`**CHOICE**: A` 等写法，不再整题跳过
+- 版本比较支持预发布后缀，beta 用户能收到同号正式版的更新提示
+- 公式调色板：自动展开 More / 回第一页、按输入框定位、矩阵弹窗 id 兜底
+- 状态栏不再被随机台词覆盖；账本柱状图缺字体不再崩；窗口最小化不再关掉自动监视
+- 新增回归测试 `tools/test_bugfixes_v106.py`
 
 ### v1.0.5（2026-11-22）
 

@@ -19,6 +19,8 @@ import time
 import urllib.error
 import urllib.request
 
+USER_AGENT = "SpellCardHomework/1.0"
+
 GITHUB_REPO = "Jerry9335/SpellCardHomework"
 GITEE_REPO = "jerry6663/SpellCardHomework"
 
@@ -30,16 +32,37 @@ class UpdateError(RuntimeError):
     pass
 
 
+_PRERELEASE_RANK = {"dev": 0, "alpha": 1, "a": 1, "beta": 2, "b": 2,
+                    "pre": 3, "preview": 3, "rc": 4}
+
+
 def parse_version(tag: str) -> tuple[int, ...]:
-    """'v1.0.5' -> (1, 0, 5)；解析失败返回空元组。"""
+    """'v1.0.5' -> (1, 0, 5)；解析失败返回空元组。只用于界面展示。"""
     m = re.search(r"(\d+(?:\.\d+)*)", str(tag or ""))
     if not m:
         return ()
     return tuple(int(x) for x in m.group(1).split("."))
 
 
+def version_key(tag: str) -> tuple[int, ...]:
+    """比较用的版本键：预发布版排在同号正式版之前。
+
+    '1.0.6-beta1' -> (1, 0, 6, 0, 2, 1)，'1.0.6' -> (1, 0, 6, 1)。
+    这样 beta1 既小于 1.0.6 正式版，也小于 beta2。
+    """
+    s = str(tag or "").strip().lower()
+    m = re.search(r"(\d+(?:\.\d+)*)(?:[-._ ]?(dev|alpha|a|beta|b|pre|preview|rc)\.?\s*(\d+)?)?", s)
+    if not m:
+        return ()
+    nums = [int(x) for x in m.group(1).split(".")]
+    pre = m.group(2)
+    if pre:
+        return tuple(nums + [0, _PRERELEASE_RANK.get(pre, 1), int(m.group(3) or 0)])
+    return tuple(nums + [1])
+
+
 def is_newer(latest: str, current: str) -> bool:
-    a, b = parse_version(latest), parse_version(current)
+    a, b = version_key(latest), version_key(current)
     if not a or not b:
         return False
     n = max(len(a), len(b))
@@ -211,7 +234,7 @@ def check(channel: str = "auto", timeout: float = 6.0) -> dict:
 
     if channel == "auto":
         if gitee and github:
-            return gitee if parse_version(gitee["tag"]) >= parse_version(github["tag"]) else github
+            return gitee if version_key(gitee["tag"]) >= version_key(github["tag"]) else github
         if gitee:
             return gitee
         if github:

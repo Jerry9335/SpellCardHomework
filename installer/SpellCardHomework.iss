@@ -1,10 +1,10 @@
-﻿; 符卡作业簿 · Inno Setup 7 安装包脚本（英文产物名）
+; 符卡作业簿 · Inno Setup 7 安装包脚本（英文产物名）
 ; 先构建 PyInstaller 产物：dist\SpellCardHomework\
 ; 运行：ISCC.exe installer\SpellCardHomework.iss
 
 #define MyAppName "SpellCardHomework"
 #define MyAppDisplayName "符卡作业簿"
-#define MyAppVersion "1.0.5"
+#define MyAppVersion "1.0.6-beta2"
 #define MyAppPublisher "Shinichi & Fastrof"
 #define MyAppExeName "SpellCardHomework.exe"
 #define MyAppURL "https://github.com/"
@@ -43,9 +43,11 @@ Name: "resetlicense"; Description: "清除本机授权与试用记录（重新�
 
 [Files]
 Source: "..\dist\SpellCardHomework\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "测试说明-beta.md"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\{#MyAppDisplayName}"; Filename: "{app}\{#MyAppExeName}"; AppUserModelID: "符卡作业簿"
+Name: "{group}\测试说明（beta）"; Filename: "{app}\测试说明-beta.md"
 Name: "{group}\{cm:UninstallProgram,{#MyAppDisplayName}}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#MyAppDisplayName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon; AppUserModelID: "符卡作业簿"
 
