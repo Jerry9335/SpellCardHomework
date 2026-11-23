@@ -152,6 +152,7 @@ docs/                  screenshots and docs
 - **Six-step onboarding**: Kaguya, Eirin, Reisen, Tewi and Kagerou introduce the main UI, capture, barrier, full-auto, ledger and settings
 - **No re-prompt for existing users**: onboarding state distinguishes first installs from upgrades; reopen any time from Settings
 - **Version marker**: app, installer, splash and docs now read v1.0.6-rc.03
+- **Fix**: after activation, a reinstall with a stale `config.json` still enters the first-run contract and onboarding
 
 ### v1.0.6 (2026-11-23)
 
