@@ -42,3 +42,10 @@ Pictures/
 *.7z
 *.zip
 Exercise-Tools.7z
+
+# 临时探针、生成报告与下载残片
+.tmp-sch/
+tools/palette_smoke_report.json
+tools/.test_config_bugfixes/
+*.part
+*.part.json
