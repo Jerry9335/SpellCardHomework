@@ -70,9 +70,11 @@ assert shown and notified
 assert notified[-1][1].get("force") is not True
 print("  OK  automatic new version -> dialog + normal toast")
 
-# 去重键
+# 去重键（避开安静时段，否则 _do_notify 会按设计不写 seen）
 a._toast_seen = {}
 a.cfg["toast_seen"] = {}
+a.cfg["toast_quiet_start"] = 0
+a.cfg["toast_quiet_end"] = 0
 a._do_notify("update", "博麗神社 · 号外", "测试", key="v1.0.7")
 assert a.cfg["toast_seen"].get("update") == "v1.0.7"
 print("  OK  notify dedupe key stored")

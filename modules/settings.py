@@ -9,7 +9,7 @@ import os
 
 APP_DIRNAME = "SpellCardHomework"
 APP_TITLE = "符卡作业簿"
-APP_VERSION = "1.0.6"
+APP_VERSION = "1.0.6-rc.03"
 
 
 def config_dir() -> str:
@@ -82,6 +82,12 @@ DEFAULTS: dict = {
     # 主题
     "theme": "classic",
     "theme_unlocked": False,
+    # 首次安装 / 新手引导
+    "onboarding_state": "",
+    "onboarding_version": "",
+    "onboarding_done_at": "",
+    "onboarding_api_skipped": False,
+    "onboarding_resume_step": 1,
 }
 
 

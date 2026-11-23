@@ -4,8 +4,8 @@
 
 #define MyAppName "SpellCardHomework"
 #define MyAppDisplayName "符卡作业簿"
-#define MyAppVersion "1.0.6"
-#define MyAppFileVersion "1.0.6.0"
+#define MyAppVersion "1.0.6-rc.03"
+#define MyAppFileVersion "1.0.6.3"
 #define MyAppPublisher "Shinichi, Fastrof & 会哈气の祥"
 #define MyAppExeName "SpellCardHomework.exe"
 #define MyAppURL "https://github.com/Jerry9335/SpellCardHomework"
@@ -16,7 +16,7 @@ AppName={#MyAppDisplayName}
 AppVersion={#MyAppVersion}
 AppVerName={#MyAppDisplayName} {#MyAppVersion}
 VersionInfoVersion={#MyAppFileVersion}
-VersionInfoProductVersion={#MyAppVersion}
+VersionInfoProductVersion={#MyAppFileVersion}
 VersionInfoProductName={#MyAppDisplayName}
 VersionInfoCompany={#MyAppPublisher}
 VersionInfoDescription={#MyAppDisplayName} 安装程序
@@ -50,11 +50,11 @@ Name: "resetlicense"; Description: "清除本机授权与试用记录（重新�
 
 [Files]
 Source: "..\dist\SpellCardHomework\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "使用说明-1.0.6.md"; DestDir: "{app}"; Flags: ignoreversion
+Source: "使用说明-1.0.6-rc.03.md"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\{#MyAppDisplayName}"; Filename: "{app}\{#MyAppExeName}"; AppUserModelID: "符卡作业簿"
-Name: "{group}\使用说明"; Filename: "{app}\使用说明-1.0.6.md"
+Name: "{group}\使用说明"; Filename: "{app}\使用说明-1.0.6-rc.03.md"
 Name: "{group}\{cm:UninstallProgram,{#MyAppDisplayName}}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#MyAppDisplayName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon; AppUserModelID: "符卡作业簿"
 

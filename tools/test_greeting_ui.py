@@ -27,7 +27,7 @@ assert a._user_display
 assert a._user_display in text, text
 assert "{name}" not in text
 assert a.greet_avatar.image is not None
-assert len(a._greet_avatars) == 9, len(a._greet_avatars)
+assert len(a._greet_avatars) == 14, len(a._greet_avatars)
 assert "：" in text
 print("宽度 bar=%d frame=%d label=%d req=%d" % (
     a.greet_frame.master.winfo_width(),

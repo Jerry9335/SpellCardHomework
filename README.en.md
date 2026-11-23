@@ -7,7 +7,7 @@
   <img src="https://img.shields.io/badge/windows-0078D6?logo=windows&amp;logoColor=white" alt="Windows 10 / 11" />
   <img src="https://img.shields.io/badge/Python-14354C.svg?logo=python&amp;logoColor=white" alt="Python 3.10+" />
   <img src="https://img.shields.io/badge/License-MIT-e8c46a.svg" alt="MIT License" />
-  <img src="https://img.shields.io/badge/version-1.0.6-c8323c.svg" alt="v1.0.6" />
+  <img src="https://img.shields.io/badge/version-1.0.6--rc.03-c8323c.svg" alt="v1.0.6-rc.03" />
   <img src="https://img.shields.io/badge/Touhou-Project%20Fan%20Work-c8323c.svg" alt="Touhou Project fan work" />
   <img src="https://img.shields.io/badge/QQ-EB1923?logo=tencent-qq&amp;logoColor=white" alt="QQ" />
   <img src="https://img.shields.io/badge/Gmail-D14836?logo=gmail&amp;logoColor=white" alt="Gmail" />
@@ -64,7 +64,7 @@ Download from [Releases](../../releases):
 
 | File | Description |
 | --- | --- |
-| `SpellCardHomework-Setup-1.0.6.exe` | Standard installer (Inno Setup) |
+| `SpellCardHomework-Setup-1.0.6-rc.03.exe` | Standard installer (Inno Setup) |
 
 ### Option 2: Run from source
 
@@ -146,6 +146,13 @@ docs/                  screenshots and docs
 
 ## Changelog
 
+### v1.0.6-rc.03 (2026-11-24)
+
+- **First-run contract**: after activation, a 3-step wizard for provider, API key (test/skip), and primary/vision models
+- **Six-step onboarding**: Kaguya, Eirin, Reisen, Tewi and Kagerou introduce the main UI, capture, barrier, full-auto, ledger and settings
+- **No re-prompt for existing users**: onboarding state distinguishes first installs from upgrades; reopen any time from Settings
+- **Version marker**: app, installer, splash and docs now read v1.0.6-rc.03
+
 ### v1.0.6 (2026-11-23)
 
 - **Safer full auto**: field-level UID/signature snapshots, Dojo player state, unique Check, banked skips and precise "leave unchecked" warnings
@@ -193,10 +200,10 @@ Remove-ItemProperty "HKCU:\Software\Shinichi\SpellCardHomework" -Name trial -Err
 ```
 
 **Q: The first launch went straight to the main window.**
-Check that About shows **v1.0.6**, then look at the `access=` lines in `%APPDATA%\SpellCardHomework\boot.log`.
+Check that About shows **v1.0.6-rc.03**, then look at the `access=` lines in `%APPDATA%\SpellCardHomework\boot.log`.
 
 **Q: The activation code is very long.**
-v1.0.6 codes are about 130 characters — paste the whole string.
+v1.0.6-rc.03 codes are about 130 characters — paste the whole string.
 
 ## License and assets
 

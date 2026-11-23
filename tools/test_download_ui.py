@@ -1,4 +1,4 @@
-"""下载窗口 / 完成窗口截图与功能冒烟。"""
+﻿"""下载窗口 / 完成窗口截图与功能冒烟。"""
 import hashlib
 import os
 import sys
@@ -53,7 +53,7 @@ class H(BaseHTTPRequestHandler):
 
 srv = ThreadingHTTPServer(("127.0.0.1", 0), H)
 threading.Thread(target=srv.serve_forever, daemon=True).start()
-url = f"http://127.0.0.1:{srv.server_address[1]}/SpellCardHomework-Setup-1.0.6.exe"
+url = f"http://127.0.0.1:{srv.server_address[1]}/SpellCardHomework-Setup-1.0.6-rc.03.exe"
 tmp = tempfile.mkdtemp(prefix="ui_dl_")
 os.environ["LOCALAPPDATA"] = tmp
 
@@ -61,8 +61,8 @@ capture.make_dpi_aware()
 root = tk.Tk()
 root.deiconify()
 info = {
-    "version": "1.0.6", "tag": "v1.0.6", "download": url,
-    "asset_name": "SpellCardHomework-Setup-1.0.6.exe",
+    "version": "1.0.6-rc.03", "tag": "v1.0.6-rc.03", "download": url,
+    "asset_name": "SpellCardHomework-Setup-1.0.6-rc.03.exe",
     "sha256": SHA, "source": "gitee", "notes": "测试",
     "max_threads": 8,
 }
@@ -101,3 +101,4 @@ if win2:
 root.destroy()
 srv.shutdown()
 print("RESULT: PASS")
+

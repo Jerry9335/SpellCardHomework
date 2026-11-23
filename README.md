@@ -7,7 +7,7 @@
   <img src="https://img.shields.io/badge/windows-0078D6?logo=windows&amp;logoColor=white" alt="Windows 10 / 11" />
   <img src="https://img.shields.io/badge/Python-14354C.svg?logo=python&amp;logoColor=white" alt="Python 3.10+" />
   <img src="https://img.shields.io/badge/License-MIT-e8c46a.svg" alt="MIT License" />
-  <img src="https://img.shields.io/badge/version-1.0.6-c8323c.svg" alt="v1.0.6" />
+  <img src="https://img.shields.io/badge/version-1.0.6--rc.03-c8323c.svg" alt="v1.0.6-rc.03" />
   <img src="https://img.shields.io/badge/Touhou-Project%20Fan%20Work-c8323c.svg" alt="Touhou Project fan work" />
   <img src="https://img.shields.io/badge/QQ-EB1923?logo=tencent-qq&amp;logoColor=white" alt="QQ" />
   <img src="https://img.shields.io/badge/Gmail-D14836?logo=gmail&amp;logoColor=white" alt="Gmail" />
@@ -64,7 +64,7 @@ Windows 桌面小工具：**截屏识题 → 英文翻译 → AI 作答 → 全�
 
 | 文件 | 说明 |
 | --- | --- |
-| `SpellCardHomework-Setup-1.0.6.exe` | 常规安装包（Inno Setup） |
+| `SpellCardHomework-Setup-1.0.6-rc.03.exe` | 常规安装包（Inno Setup） |
 
 ### 方式二：源码运行
 
@@ -146,6 +146,13 @@ docs/                  截图与文档
 
 ## 更新日志
 
+### v1.0.6-rc.03（2026-11-24）
+
+- **首次安装契约**：激活授权后进入 3 页引导——选举结界来源、填写/测试 API Key、选择主模型与视觉模型；也可跳过，稍后在设置里补
+- **六步新手引导**：蓬莱山辉夜、八意永琳、铃仙、因幡天为、今泉影狼逐页介绍主界面、出题、结界、全自动、账本与设置；右侧角色卡 + 聚光灯高亮
+- **老用户不打扰**：用 onboarding 状态区分首次安装与升级，升级用户直接进入主界面；设置 → 引路与契约 → 可随时重看新手引导
+- **版本标记**：程序、安装器、启动图与说明统一为 v1.0.6-rc.03
+
 ### v1.0.6（2026-11-23）
 
 - **全自动更稳**：字段级快照（UID / signature）、Dojo 判分状态、唯一 Check 校验、跳过入账、精确处理“未检查就离开”警告，避免误填、误点、静默停题
@@ -193,10 +200,10 @@ Remove-ItemProperty "HKCU:\Software\Shinichi\SpellCardHomework" -Name trial -Err
 ```
 
 **Q：首次启动直接进了主界面？**
-先确认「关于程序」里版本是 **v1.0.6**，再看 `%APPDATA%\SpellCardHomework\boot.log` 里的 `access=` 记录。
+先确认「关于程序」里版本是 **v1.0.6-rc.03**，再看 `%APPDATA%\SpellCardHomework\boot.log` 里的 `access=` 记录。
 
 **Q：激活码太长？**
-v1.0.6 的激活码约 130 字符，整段复制粘贴即可。
+v1.0.6-rc.03 的激活码约 130 字符，整段复制粘贴即可。
 
 ## 开源协议与素材说明
 

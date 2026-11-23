@@ -11,15 +11,16 @@ from modules import greetings as g  # noqa: E402
 
 
 def main() -> None:
-    assert len(g.ENTRIES) == 60, len(g.ENTRIES)
-    assert g.ROTATE_SECONDS == 60, g.ROTATE_SECONDS
+    assert len(g.ENTRIES) == 85, len(g.ENTRIES)
+    assert g.ROTATE_SECONDS == 30, g.ROTATE_SECONDS
     assert g.all_avatars() == {
         "reimu", "marisa", "aya", "sakuya", "keine",
         "patchouli", "remilia", "flandre", "yukari",
+        "kaguya", "eirin", "reisen", "tewi", "kagerou",
     }
     for e in g.ENTRIES:
         assert "{name}" in e["text"], e
-    print("  OK  60 条 / 9 个角色 / 都带 {name}")
+    print("  OK  85 条 / 14 个角色 / 都带 {name}")
 
     expect = {0: g.LATE, 5: g.LATE, 6: g.MORNING, 11: g.MORNING,
               12: g.AFTERNOON, 17: g.AFTERNOON, 18: g.EVENING,

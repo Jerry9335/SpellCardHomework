@@ -32,8 +32,9 @@ if HERE not in sys.path:
 from PIL import Image, ImageTk  # noqa: E402
 
 from modules import (answer_engine, answer_format, banner_time, capture, clipboard,
-                     greetings, hotkey, latex, llm, ocr_local, prompts, question_reader,
-                     region, settings, skip_ledger, theme, user_name, verify_math, web)  # noqa: E402
+                     first_run, greetings, hotkey, latex, llm, ocr_local, onboarding,
+                     prompts, question_reader, region, settings, setup_wizard, skip_ledger,
+                     theme, user_name, verify_math, web)  # noqa: E402
 
 APP_TITLE = settings.APP_TITLE
 ASSETS = os.path.join(HERE, "assets")
@@ -175,6 +176,11 @@ class App:
         self._auto_changed = False
         self._auto_last_trigger = 0.0
         self._settings_win: tk.Toplevel | None = None
+        self._setup_win = None
+        self._onboarding_win = None
+        self._manual_onboarding = False
+        self._onboarding_pre_access = ""
+        self._onboarding_config_existed = False
         self._banner_job = None
         self._banner_phase = banner_time.phase_for_now()
         self._banner_cache = {}
@@ -280,7 +286,9 @@ class App:
             except Exception:
                 pass
 
-        keys = ("reimu", "marisa", "sakuya", "keine", "patchouli", "remilia", "flandre", "yukari", "aya")
+        keys = ("reimu", "marisa", "sakuya", "keine", "patchouli", "remilia",
+                "flandre", "yukari", "aya", "kaguya", "eirin", "reisen",
+                "tewi", "kagerou")
         for key in keys:
             for path in (os.path.join(ASSETS, "char", "fan", f"avatar_{key}.png"),
                          os.path.join(ASSETS, "char", f"avatar_{key}.png")):
@@ -1380,6 +1388,135 @@ class App:
         tk.Label(win, text="灵力 = tokens；香火钱按参考单价估算，实际以平台账单为准。",
                  bg=C["bg"], fg=C["muted"], font=(self.F_UI, 8)).pack(anchor="w", padx=22, pady=(0, 8))
 
+    # ------------------------------------------------------------ 首次安装/引路
+    def _reload_credentials_into_ui(self) -> None:
+        try:
+            fresh = settings.load()
+            for key in ("base_url", "api_key", "model", "vision_model",
+                        "vision_base_url", "vision_api_key", "provider"):
+                if key in fresh:
+                    self.cfg[key] = fresh[key]
+            self.base_var.set(str(self.cfg.get("base_url") or ""))
+            self.key_var.set(str(self.cfg.get("api_key") or ""))
+            self.model_var.set(str(self.cfg.get("model") or ""))
+            self.vision_var.set(str(self.cfg.get("vision_model") or "（使用答题模型）"))
+            self.vision_base_var.set(str(self.cfg.get("vision_base_url") or ""))
+            self.vision_key_var.set(str(self.cfg.get("vision_api_key") or ""))
+            if self.model_var.get():
+                self._models = [self.model_var.get()]
+        except Exception:
+            pass
+
+    def _on_setup_progress(self, step: int) -> None:
+        try:
+            self.cfg["onboarding_state"] = first_run.STATE_IN_PROGRESS
+            self.cfg["onboarding_resume_step"] = max(1, min(9, int(step)))
+            settings.save(self.cfg)
+        except Exception:
+            pass
+
+    def start_setup_wizard(self, start_step: int = 1) -> None:
+        if self._setup_win is not None and getattr(self._setup_win, "winfo_exists", lambda: False)():
+            try:
+                self._setup_win.lift()
+            except Exception:
+                pass
+            return
+        self._setup_win = setup_wizard.SetupWizard(
+            self, self._on_setup_done, start_step=start_step,
+            on_progress=self._on_setup_progress)
+
+    def _on_setup_done(self, result: dict) -> None:
+        self._setup_win = None
+        if result.get("cancelled"):
+            self._boot_log("first-run setup cancelled")
+            try:
+                self.root.destroy()
+            except Exception:
+                pass
+            return
+        if result.get("skipped"):
+            self.cfg["onboarding_api_skipped"] = True
+        else:
+            self.cfg["onboarding_api_skipped"] = bool(result.get("api_skipped"))
+            self._reload_credentials_into_ui()
+        try:
+            first_run.mark_in_progress(self.cfg, 4)
+            settings.save(self.cfg)
+        except Exception:
+            pass
+        self.root.after(180, lambda: self.open_onboarding(manual=False, start_step=1))
+
+    def _on_onboarding_done(self, skipped: bool = False) -> None:
+        self._onboarding_win = None
+        if not self._manual_onboarding:
+            try:
+                first_run.mark_done(self.cfg, settings.APP_VERSION,
+                                    bool(self.cfg.get("onboarding_api_skipped")))
+                settings.save(self.cfg)
+            except Exception:
+                pass
+        self._manual_onboarding = False
+        self._reload_credentials_into_ui()
+        try:
+            if skipped:
+                self._status("引路先跳过——之后随时可以在设置里重看。", "warn")
+            else:
+                self._status("引路完成。结界已记住你的选择。", "ok")
+        except Exception:
+            pass
+
+    def _on_onboarding_progress(self, step: int) -> None:
+        if self._manual_onboarding:
+            return
+        try:
+            self.cfg["onboarding_state"] = first_run.STATE_IN_PROGRESS
+            self.cfg["onboarding_resume_step"] = max(4, min(9, 3 + int(step)))
+            settings.save(self.cfg)
+        except Exception:
+            pass
+
+    def open_onboarding(self, manual: bool = True, start_step: int = 1) -> None:
+        if self._onboarding_win is not None and getattr(
+                self._onboarding_win, "winfo_exists", lambda: False)():
+            try:
+                self._onboarding_win.lift()
+            except Exception:
+                pass
+            return
+        self._manual_onboarding = bool(manual)
+        self._onboarding_win = onboarding.OnboardingWizard(
+            self, self._on_onboarding_done, start_step=start_step,
+            on_progress=self._on_onboarding_progress)
+
+    def maybe_start_first_run(self, pre_access: str, config_existed: bool) -> None:
+        self._onboarding_pre_access = pre_access
+        self._onboarding_config_existed = config_existed
+        if not first_run.should_show(self.cfg, pre_access, config_existed):
+            if (not str(self.cfg.get("onboarding_state") or "").strip()
+                    and (config_existed or pre_access != "fresh")):
+                try:
+                    first_run.mark_legacy(self.cfg)
+                    settings.save(self.cfg)
+                except Exception:
+                    pass
+            return
+        try:
+            first_run.mark_pending(self.cfg)
+            settings.save(self.cfg)
+        except Exception:
+            pass
+        resume = int(self.cfg.get("onboarding_resume_step") or 1)
+        self.root.after(350, lambda: self._start_first_run_resume(resume))
+
+    def _start_first_run_resume(self, resume: int) -> None:
+        if resume > first_run.SETUP_STEPS:
+            self.open_onboarding(manual=False,
+                                 start_step=max(1, min(first_run.ONBOARD_STEPS,
+                                                       resume - first_run.SETUP_STEPS)))
+        else:
+            self.start_setup_wizard(start_step=max(1, min(first_run.SETUP_STEPS, resume)))
+
     def _open_settings(self) -> None:
         if self._settings_win is not None and self._settings_win.winfo_exists():
             self._settings_win.lift()
@@ -1392,8 +1529,8 @@ class App:
         win.transient(self.root)
         win.resizable(False, False)
         _sh = win.winfo_screenheight()
-        _h = min(950, _sh - 100)
-        win.geometry(f"820x{_h}+{self.root.winfo_rootx() + 60}+{self.root.winfo_rooty() + 20}")
+        _h = min(900, _sh - 150)
+        win.geometry(f"820x{_h}+{self.root.winfo_rootx() + 60}+{max(8, self.root.winfo_rooty() + 8)}")
 
         def close_win():
             self._dlg_model_box = None
@@ -1782,6 +1919,37 @@ class App:
                   font=(self.F_UI, 9)).pack(side="left", padx=(10, 0))
         add_row(g2, 9, "神社登记", auth_row, f"本机灵符 {_lic.machine_code()}")
 
+        # --- 引路与契约 ---
+        g_onboard = section("引路与契约")
+        _ostate = str(self.cfg.get("onboarding_state") or "").strip()
+        _olabel = {
+            first_run.STATE_DONE: "已看过新手引导",
+            first_run.STATE_LEGACY: "老用户升级，不自动弹出",
+            first_run.STATE_IN_PROGRESS: "契约/引路还没走完",
+            first_run.STATE_PENDING: "契约/引路还没走完",
+        }.get(_ostate, "尚未走过契约与引路")
+        tk.Label(g_onboard, text="新手引导只在首次安装出现；想再看一遍，可以随时从这里重新打开。",
+                 bg=C["bg"], fg=C["muted"], anchor="w", justify="left",
+                 font=(self.F_UI, 9)).grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 6))
+        _orow = tk.Frame(g_onboard, bg=C["bg"])
+        _orow.grid(row=1, column=0, columnspan=3, sticky="w")
+        tk.Button(_orow, text="重看新手引导", command=lambda: (
+            close_win(), self.open_onboarding(manual=True)),
+                  bg=C["gold"], fg="#241b12", activebackground="#f0d486",
+                  activeforeground="#241b12", relief="flat", bd=0,
+                  padx=14, pady=5, cursor="hand2",
+                  font=(self.F_UI, 9, "bold")).pack(side="left")
+        if _ostate in (first_run.STATE_PENDING, first_run.STATE_IN_PROGRESS):
+            tk.Button(_orow, text="继续契约", command=lambda: (
+                close_win(), self._start_first_run_resume(
+                    int(self.cfg.get("onboarding_resume_step") or 1))),
+                      bg=C["panel2"], fg=C["text"], activebackground=C["accent_dark"],
+                      activeforeground="#ffffff", relief="flat", bd=0,
+                      padx=12, pady=5, cursor="hand2",
+                      font=(self.F_UI, 9)).pack(side="left", padx=(10, 0))
+        tk.Label(_orow, text=_olabel, bg=C["bg"], fg=C["muted"],
+                 font=(self.F_UI, 9)).pack(side="left", padx=(12, 0))
+
         # foot 已在窗口底部创建
         foot_label = tk.Label(foot, text="通行密钥用 DPAPI 加密保存在本机（即 API Key）。",
                               bg=C["bg"], fg=C["muted"], font=(self.F_UI, 9))
@@ -1915,7 +2083,8 @@ class App:
         tk.Label(gh_row, text="GitHub：", bg=C["bg"], fg=C["muted"],
                  font=(self.F_UI, 9)).pack(side="left")
         for idx, (label, url) in enumerate((("Shinichi", "https://github.com/Jerry9335"),
-                                             ("Fastrof", "https://github.com/Fastrof"))):
+                                             ("Fastrof", "https://github.com/Fastrof"),
+                                             ("会哈气の祥", "https://github.com/lic402514-gif"))):
             if idx:
                 tk.Label(gh_row, text="  |  ", bg=C["bg"], fg=C["muted"],
                          font=(self.F_UI, 9)).pack(side="left")
@@ -5527,13 +5696,18 @@ def main() -> None:
             return
         state["booted"] = True
         trial_notice = ""
+        # 关键：必须在任何 settings.save / 激活前记下“首次安装”的两个事实，
+        # 不能只看版本号（老用户根本没有 onboarding 字段）。
+        config_existed = first_run.config_exists(settings.CONFIG_PATH)
         try:
             from modules import license as _lic
 
             access, lic_msg, _days = _lic.check_access()
         except Exception as _e:
             access, lic_msg, _days = "tampered", f"授权检查失败：{_e}", 0
-        _boot_log(f"access={access} exe={sys.executable} argv={sys.argv[0]}")
+        pre_access = access
+        _boot_log(f"access={access} config_existed={config_existed} "
+                  f"exe={sys.executable} argv={sys.argv[0]}")
         if access == "licensed":
             pass
         elif access == "trial":
@@ -5630,6 +5804,10 @@ def main() -> None:
                     splash[0].destroy()
             except Exception:
                 pass
+        try:
+            app.maybe_start_first_run(pre_access, config_existed)
+        except Exception:
+            pass
 
     if splash is not None:
         splash[0].bind("<Button-1>", lambda _e: boot())

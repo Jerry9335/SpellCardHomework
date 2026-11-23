@@ -16,7 +16,7 @@ SLOT_LABELS = {
     LATE: "深夜",
 }
 
-ROTATE_SECONDS = 60
+ROTATE_SECONDS = 30
 
 # (speaker, avatar, slot, text)
 # slot: morning / afternoon / evening / late / any
@@ -90,13 +90,44 @@ _RAW = [
     ("帕秋莉", "patchouli", "any", "{name}，图书馆保持安静。"),
     ("文文", "aya", "any", "{name}，要接受采访吗？"),
     ("蕾米莉亚", "remilia", "any", "{name}，命运把你带到这里了呢。"),
+
+    # ---------------- 新角色：永远亭 / 竹林 ----------------
+    ("辉夜", "kaguya", MORNING, "早安，{name}。竹林的晨露还没干，你就来打扰我的清梦了？"),
+    ("辉夜", "kaguya", AFTERNOON, "下午好，{name}。要不要陪我下一局棋？输的人负责泡茶。"),
+    ("辉夜", "kaguya", EVENING, "晚上好，{name}。月亮升起来了，正是听公主讲故事的时候。"),
+    ("辉夜", "kaguya", LATE, "{name}，夜深了。永夜的时间，也别熬坏了身子。"),
+    ("辉夜", "kaguya", "any", "{name}，欢迎来到永远亭。这里的时光，走得比外面慢一些。"),
+
+    ("永琳", "eirin", MORNING, "早上好，{name}。先让我看看气色——昨晚又熬夜了吧？"),
+    ("永琳", "eirin", AFTERNOON, "下午好，{name}。药已经配好，记得按时服用。"),
+    ("永琳", "eirin", EVENING, "晚上好，{name}。月之头脑也要休息，闲聊就到此为止吧。"),
+    ("永琳", "eirin", LATE, "{name}，这个时辰还不睡？再这样，我可要开药方了。"),
+    ("永琳", "eirin", "any", "{name}，身体是退治的本钱。先坐下，让我诊一诊。"),
+
+    ("铃仙", "reisen", MORNING, "早上好，{name}。今天也要精神满满地退治哦……大概。"),
+    ("铃仙", "reisen", AFTERNOON, "下午好，{name}。我的眼睛有点晕，你、你别靠太近。"),
+    ("铃仙", "reisen", EVENING, "晚上好，{name}。月兔的耳朵很灵，小声一点也没关系。"),
+    ("铃仙", "reisen", LATE, "{name}，已经这么晚了……再不睡，明天会没精神的。"),
+    ("铃仙", "reisen", "any", "{name}，欢迎回来。要买点月都的药吗？很、很有效的。"),
+
+    ("天为", "tewi", MORNING, "早啊，{name}！今天也来试试运气吧，我保证不骗你～"),
+    ("天为", "tewi", AFTERNOON, "下午好，{name}。胡萝卜分你一半——只有一半哦。"),
+    ("天为", "tewi", EVENING, "晚上好，{name}。月兔的恶作剧时间到啦！"),
+    ("天为", "tewi", LATE, "{name}，这么晚还不睡？嘿嘿，是不是在等我讲鬼故事？"),
+    ("天为", "tewi", "any", "{name}，来玩吧！输了的人请我吃胡萝卜。"),
+
+    ("影狼", "kagerou", MORNING, "早、早上好，{name}。今天的太阳……真好啊。"),
+    ("影狼", "kagerou", AFTERNOON, "下午好，{name}。那个，我最近有在好好控制变身了……"),
+    ("影狼", "kagerou", EVENING, "晚上好，{name}。月亮一出来，我就有点……别、别在意。"),
+    ("影狼", "kagerou", LATE, "{name}，夜深了。狼的耳朵会听到很多声音，快休息吧。"),
+    ("影狼", "kagerou", "any", "{name}，欢迎。要、要一起散步吗？我不会咬人的。"),
 ]
 
 ENTRIES = [
     {"id": i, "speaker": speaker, "avatar": avatar, "slot": slot, "text": text}
     for i, (speaker, avatar, slot, text) in enumerate(_RAW)
 ]
-assert len(ENTRIES) == 60, len(ENTRIES)
+assert len(ENTRIES) == 85, len(ENTRIES)
 
 
 def slot_for_hour(hour: int) -> str:

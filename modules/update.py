@@ -2,8 +2,8 @@
 
 返回统一结构：
     {
-        "version": "1.0.6",       # 去掉 v 的版本号
-        "tag": "v1.0.6",
+        "version": "1.0.6-rc.03",  # 去掉 v 的版本号
+        "tag": "v1.0.6-rc.03",
         "notes": "...",           # Release 说明（纯文本）
         "url": "https://...",     # Release 页面
         "download": "https://...",# 安装包地址（没有则同 url）
@@ -33,7 +33,7 @@ class UpdateError(RuntimeError):
 
 
 def parse_version(tag: str) -> tuple[int, ...]:
-    """'v1.0.6' -> (1, 0, 5)；解析失败返回空元组。只用于界面展示。"""
+    """'v1.0.6' -> (1, 0, 6)；解析失败返回空元组。只用于界面展示。"""
     m = re.search(r"(\d+(?:\.\d+)*)", str(tag or ""))
     if not m:
         return ()
