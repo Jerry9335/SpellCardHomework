@@ -1,15 +1,47 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-  <script>document.documentElement.classList.add("js");</script>
+  <script>
+document.documentElement.classList.add("js");
+(function () {
+  var ua = navigator.userAgent || "";
+  if (/MicroMessenger|wxwork/i.test(ua)) document.documentElement.classList.add("is-wechat");
+})();
+</script>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>下载 · 符卡作业簿</title>
   <meta name="description" content="下载符卡作业簿 v1.0.6-rc.04：Windows 安装包，含校验和、系统要求与授权说明。" />
   <link rel="icon" href="assets/img/favicon.png" />
-  <link rel="stylesheet" href="assets/css/style.css?v=20261122d" />
+  <link rel="stylesheet" href="assets/css/style.css?v=20261124a" />
 </head>
 <body>
+  <!-- 微信内置浏览器硬拦截：JS 只负责复制链接，不提供继续浏览按钮 -->
+  <div class="wechat-guard" id="wechatGuard" role="alertdialog" aria-modal="true"
+       aria-labelledby="wechatGuardTitle" aria-describedby="wechatGuardDesc">
+    <div class="wechat-card">
+      <div class="wechat-seal" aria-hidden="true">微</div>
+      <p class="wechat-kicker">结界提示 · 微信内置浏览器</p>
+      <h2 id="wechatGuardTitle">请用系统浏览器打开</h2>
+      <p class="wechat-desc" id="wechatGuardDesc">
+        微信内置浏览器会限制本站的样式与下载功能，页面可能显示不全。
+        复制网址后，用手机或电脑的浏览器打开即可正常访问。
+      </p>
+      <ol class="wechat-steps">
+        <li><b>iPhone</b><span>点右上角「···」→「在默认浏览器打开」</span></li>
+        <li><b>Android</b><span>点右上角「···」→「在浏览器打开」</span></li>
+        <li><b>电脑微信</b><span>点右上角「···」→「在浏览器中打开」</span></li>
+      </ol>
+      <div class="wechat-url-row">
+        <input class="wechat-url" id="wechatUrl" type="text" readonly
+               value="https://jerry9335.github.io/SpellCardHomework/" aria-label="本站网址" />
+        <button class="btn btn-primary wechat-copy" id="wechatCopy" type="button">复制本站链接</button>
+      </div>
+      <p class="wechat-status" id="wechatStatus" aria-live="polite">复制后粘贴到系统浏览器的地址栏。</p>
+      <p class="wechat-foot">本站不会要求你在微信内登录或下载任何文件。请勿在微信内置浏览器中继续操作。</p>
+    </div>
+  </div>
+
   <canvas id="petals" aria-hidden="true"></canvas>
 
   <header class="site-header">
@@ -49,9 +81,14 @@
               </div>
             </div>
             <div class="actions">
-              <a class="btn btn-primary" href="https://github.com/Jerry9335/SpellCardHomework/releases/download/v1.0.6-rc.04/SpellCardHomework-Setup-1.0.6-rc.04.exe">下载安装包</a>
-              <a class="btn btn-ghost" href="https://github.com/Jerry9335/SpellCardHomework/releases/latest" target="_blank" rel="noopener">发布页</a>
+              <a class="btn btn-primary" href="https://github.com/Jerry9335/SpellCardHomework/releases/download/v1.0.6-rc.04/SpellCardHomework-Setup-1.0.6-rc.04.exe">GitHub 下载</a>
+              <a class="btn btn-gitee" href="https://gitee.com/jerry6663/SpellCardHomework/releases/download/v1.0.6-rc.04/SpellCardHomework-Setup-1.0.6-rc.04.exe">Gitee 下载<span class="mini">国内推荐</span></a>
             </div>
+            <div class="actions">
+              <a class="btn btn-ghost" href="https://github.com/Jerry9335/SpellCardHomework/releases/latest" target="_blank" rel="noopener">GitHub 发布页</a>
+              <a class="btn btn-ghost" href="https://gitee.com/jerry6663/SpellCardHomework/releases/tag/v1.0.6-rc.04" target="_blank" rel="noopener">Gitee 发布页</a>
+            </div>
+            <p class="dl-note">两个渠道提供同一个安装包，SHA256 一致；若某个渠道暂时打不开，请换另一个。</p>
           </article>
         </div>
 
@@ -65,17 +102,14 @@
     <section class="section tight">
       <div class="container">
         <div class="section-head reveal">
-          <span class="seal">取</span>
-          <h2>号外取件</h2>
-          <p class="sub">多线程下载、断点续传、SHA256 校验，验明正身再张贴</p>
+          <span class="seal">报</span>
+          <h2>号外与更新</h2>
+          <p class="sub">启动时打听一次；新版本只提示，不自动下载安装</p>
         </div>
-        <div class="grid grid-2">
-          <figure class="shot reveal" style="margin:0">
-            <img src="assets/img/download_window.png" alt="号外取件：多线程下载窗口" loading="lazy" />
-          </figure>
-          <figure class="shot reveal" style="margin:0">
-            <img src="assets/img/download_complete.png" alt="号外下载完成：可以张贴或拖走安装包" loading="lazy" />
-          </figure>
+        <div class="update-note reveal">
+          <span class="update-tag">更新方式</span>
+          <p><strong>首次安装、首次启动不检查更新。</strong>之后每次启动会检查一次新版本；发现更新只弹窗提示，由你选择是否前往下载。</p>
+          <p>程序不会自动下载、不会自动安装、也不会强制退出。下载安装包后，请亲自运行安装程序完成更新。</p>
         </div>
       </div>
     </section>
@@ -194,6 +228,7 @@
     <section class="section">
       <div class="container" style="text-align:center">
         <a class="btn btn-primary reveal" href="https://github.com/Jerry9335/SpellCardHomework" target="_blank" rel="noopener">前往 GitHub 仓库</a>
+        <a class="btn btn-ghost reveal" href="https://gitee.com/jerry6663/SpellCardHomework" target="_blank" rel="noopener">前往 Gitee 仓库</a>
       </div>
     </section>
     <section class="section">
@@ -233,7 +268,8 @@
     </div>
   </footer>
 
-  <script src="assets/js/main.js?v=20261122d"></script>
+  <script src="assets/js/main.js?v=20261124a"></script>
+  <script src="assets/js/wechat-guard.js?v=20261124a"></script>
 </body>
 </html>
 

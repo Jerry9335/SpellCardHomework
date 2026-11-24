@@ -1,4 +1,4 @@
-﻿/* =========================================================
+/* =========================================================
    符卡作业簿 · 官网样式
    深色神社 / 红白 / 樱花 / 符卡
    ========================================================= */
@@ -819,6 +819,243 @@ details.faq p { margin: 0 0 14px; color: var(--muted); font-size: 14px; }
 @media (max-width: 640px) {
   .bgm-player::before { right: 34px; bottom: 46px; width: 30px; }
   .bgm-player::after { right: 30px; bottom: 41px; width: 8px; height: 8px; }
+}
+
+/* =======================================================================
+   微信内置浏览器硬拦截
+   ======================================================================= */
+.wechat-guard { display: none; }
+
+html.is-wechat body { overflow: hidden; }
+html.is-wechat body > :not(.wechat-guard) { visibility: hidden; }
+html.is-wechat .wechat-guard {
+  display: flex;
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background:
+    radial-gradient(900px 520px at 20% 0%, rgba(200, 50, 60, 0.28), transparent 65%),
+    radial-gradient(760px 520px at 100% 100%, rgba(120, 80, 190, 0.24), transparent 60%),
+    rgba(6, 4, 12, 0.97);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+}
+
+.wechat-guard::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.18;
+  background-image:
+    repeating-linear-gradient(90deg, rgba(232, 196, 106, 0.12) 0 1px, transparent 1px 90px),
+    repeating-linear-gradient(0deg, rgba(232, 196, 106, 0.08) 0 1px, transparent 1px 90px);
+  mask-image: radial-gradient(circle at 50% 30%, #000 0%, transparent 76%);
+}
+
+.wechat-card {
+  position: relative;
+  z-index: 1;
+  width: calc(100vw - 28px);
+  max-width: 560px;
+  min-width: 0;
+  max-height: calc(100dvh - 48px);
+  overflow: auto;
+  padding: 30px 32px 26px;
+  border: 1px solid rgba(232, 196, 106, 0.34);
+  border-radius: 20px;
+  background: linear-gradient(165deg, rgba(38, 28, 66, 0.98), rgba(13, 9, 24, 0.99));
+  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.68), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  animation: wechat-guard-in 0.32s ease-out both;
+}
+
+@keyframes wechat-guard-in {
+  from { opacity: 0; transform: translateY(10px) scale(0.985); }
+  to { opacity: 1; transform: none; }
+}
+
+.wechat-seal {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  margin-bottom: 12px;
+  border-radius: 11px;
+  color: #fff;
+  font-family: var(--font-display);
+  font-size: 24px;
+  line-height: 1;
+  background: linear-gradient(135deg, var(--red), var(--red-deep));
+  box-shadow: 0 10px 26px rgba(200, 50, 60, 0.38);
+}
+
+.wechat-kicker {
+  margin: 0 0 4px;
+  color: var(--gold);
+  font-size: 12px;
+  letter-spacing: 2px;
+}
+
+.wechat-card h2 {
+  margin: 0 0 10px;
+  color: var(--gold-soft);
+  font-family: var(--font-display);
+  font-size: clamp(28px, 5vw, 36px);
+  line-height: 1.25;
+  letter-spacing: 2px;
+}
+
+.wechat-desc {
+  margin: 0 0 18px;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.8;
+}
+
+.wechat-steps {
+  margin: 0 0 18px;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--line-soft);
+  border-radius: 12px;
+  overflow: hidden;
+  background: rgba(7, 5, 14, 0.38);
+}
+
+.wechat-steps li {
+  display: grid;
+  grid-template-columns: 78px minmax(0, 1fr);
+  gap: 12px;
+  padding: 11px 14px;
+  border-top: 1px dashed var(--line-soft);
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.wechat-steps li:first-child { border-top: 0; }
+.wechat-steps b { color: var(--gold-soft); font-weight: 600; letter-spacing: 1px; }
+.wechat-steps span { color: var(--muted); }
+
+.wechat-url-row {
+  display: flex;
+  gap: 10px;
+  align-items: stretch;
+  margin-top: 4px;
+}
+
+.wechat-url {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 11px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(8, 5, 14, 0.72);
+  color: #c8bedd;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-overflow: ellipsis;
+}
+
+.wechat-copy { flex: 0 0 auto; padding: 10px 18px; font-size: 13px; letter-spacing: 1px; }
+
+.wechat-status {
+  min-height: 20px;
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.wechat-status.ok { color: #8fdc9e; }
+.wechat-status.err { color: #ff9b9b; }
+
+.wechat-foot {
+  margin: 12px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--line-soft);
+  color: #8c829f;
+  font-size: 11px;
+  line-height: 1.7;
+}
+
+/* =======================================================================
+   下载页：GitHub / Gitee 双通道
+   ======================================================================= */
+.dl-card .actions + .actions { margin-top: 10px; }
+.dl-card .actions .btn {
+  flex: 1 1 210px;
+  justify-content: center;
+  padding: 12px 18px;
+  font-size: 13px;
+  letter-spacing: 1px;
+}
+
+.btn-gitee {
+  background: linear-gradient(135deg, #b3262f, #7e171e);
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.16);
+  box-shadow: 0 14px 34px rgba(180, 30, 40, 0.35);
+}
+
+.btn-gitee:hover { color: #fff; }
+
+.btn-gitee .mini {
+  display: inline-block;
+  margin-left: 2px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--gold-soft);
+  color: #3a1d1d;
+  font-size: 10px;
+  line-height: 1.4;
+  letter-spacing: 0;
+}
+
+.dl-note {
+  margin: 12px 0 0;
+  color: #8c829f;
+  font-size: 11px;
+  line-height: 1.7;
+}
+
+.update-note {
+  display: grid;
+  gap: 10px;
+  max-width: 780px;
+  margin: 0 auto;
+  padding: 24px 26px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: linear-gradient(160deg, rgba(36, 26, 64, 0.82), rgba(16, 11, 28, 0.9));
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.9;
+}
+
+.update-note strong { color: var(--gold-soft); }
+.update-note .update-tag {
+  justify-self: start;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: rgba(200, 50, 60, 0.18);
+  border: 1px solid rgba(232, 196, 106, 0.24);
+  color: var(--gold);
+  font-size: 11px;
+  letter-spacing: 2px;
+}
+
+@media (max-width: 640px) {
+  .wechat-guard { padding: 14px; }
+  .wechat-card { padding: 24px 20px 20px; max-height: calc(100dvh - 28px); }
+  .wechat-url-row { flex-direction: column; }
+  .wechat-copy { width: 100%; }
+  .wechat-steps li { grid-template-columns: 70px minmax(0, 1fr); }
+  .dl-card .actions .btn { flex-basis: 100%; }
 }
 
 

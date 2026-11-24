@@ -1,15 +1,47 @@
 ﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-  <script>document.documentElement.classList.add("js");</script>
+  <script>
+document.documentElement.classList.add("js");
+(function () {
+  var ua = navigator.userAgent || "";
+  if (/MicroMessenger|wxwork/i.test(ua)) document.documentElement.classList.add("is-wechat");
+})();
+</script>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>符卡作业簿 · SpellCardHomework</title>
   <meta name="description" content="东方 Project 风格的 Windows 截屏识题 + AI 作答 + 全自动网页答题工具。" />
   <link rel="icon" href="assets/img/favicon.png" />
-  <link rel="stylesheet" href="assets/css/style.css?v=20261122d" />
+  <link rel="stylesheet" href="assets/css/style.css?v=20261124a" />
 </head>
 <body>
+  <!-- 微信内置浏览器硬拦截：JS 只负责复制链接，不提供继续浏览按钮 -->
+  <div class="wechat-guard" id="wechatGuard" role="alertdialog" aria-modal="true"
+       aria-labelledby="wechatGuardTitle" aria-describedby="wechatGuardDesc">
+    <div class="wechat-card">
+      <div class="wechat-seal" aria-hidden="true">微</div>
+      <p class="wechat-kicker">结界提示 · 微信内置浏览器</p>
+      <h2 id="wechatGuardTitle">请用系统浏览器打开</h2>
+      <p class="wechat-desc" id="wechatGuardDesc">
+        微信内置浏览器会限制本站的样式与下载功能，页面可能显示不全。
+        复制网址后，用手机或电脑的浏览器打开即可正常访问。
+      </p>
+      <ol class="wechat-steps">
+        <li><b>iPhone</b><span>点右上角「···」→「在默认浏览器打开」</span></li>
+        <li><b>Android</b><span>点右上角「···」→「在浏览器打开」</span></li>
+        <li><b>电脑微信</b><span>点右上角「···」→「在浏览器中打开」</span></li>
+      </ol>
+      <div class="wechat-url-row">
+        <input class="wechat-url" id="wechatUrl" type="text" readonly
+               value="https://jerry9335.github.io/SpellCardHomework/" aria-label="本站网址" />
+        <button class="btn btn-primary wechat-copy" id="wechatCopy" type="button">复制本站链接</button>
+      </div>
+      <p class="wechat-status" id="wechatStatus" aria-live="polite">复制后粘贴到系统浏览器的地址栏。</p>
+      <p class="wechat-foot">本站不会要求你在微信内登录或下载任何文件。请勿在微信内置浏览器中继续操作。</p>
+    </div>
+  </div>
+
   <canvas id="petals" aria-hidden="true"></canvas>
 
   <header class="site-header">
@@ -248,6 +280,7 @@
     </div>
   </footer>
 
-  <script src="assets/js/main.js?v=20261122d"></script>
+  <script src="assets/js/main.js?v=20261124a"></script>
+  <script src="assets/js/wechat-guard.js?v=20261124a"></script>
 </body>
 </html>
