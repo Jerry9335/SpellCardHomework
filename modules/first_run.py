@@ -97,6 +97,51 @@ def mark_legacy(cfg: dict) -> None:
     cfg["onboarding_resume_step"] = SETUP_STEPS + ONBOARD_STEPS
 
 
+def install_anchor(install_dir: str) -> str:
+    """安装目录的创建时间锚点。
+
+    Windows 上目录 ctime 是创建时间；Inno 卸载会删除安装目录，重装后目录
+    重建，锚点变化；普通覆盖升级不会改变这个目录的创建时间。
+    """
+    try:
+        return str(int(os.path.getctime(install_dir)))
+    except OSError:
+        return ""
+
+
+def reinstall_detected(cfg: dict, config_path: str, install_dir: str) -> bool:
+    """判断当前启动是否是“卸载后重装”（而不是覆盖升级）。"""
+    current = install_anchor(install_dir)
+    if not current:
+        return False
+    old = str(cfg.get("install_anchor") or "").strip()
+    if old:
+        return old != current
+    # 从没有锚点的旧版本迁移：如果安装目录比 config.json 新，说明配置是上一次
+    # 安装留下的，当前目录是重装后新建的。已有老用户覆盖升级时目录更旧。
+    try:
+        if not config_exists(config_path):
+            return False
+        return os.path.getctime(install_dir) > os.path.getmtime(config_path) + 2
+    except OSError:
+        return False
+
+
+def mark_install_anchor(cfg: dict, install_dir: str) -> None:
+    current = install_anchor(install_dir)
+    if current:
+        cfg["install_anchor"] = current
+
+
+def reset_for_reinstall(cfg: dict) -> None:
+    """卸载重装时只重置首启/引导状态，保留 API Key、模型、账本等用户数据。"""
+    cfg["onboarding_state"] = STATE_PENDING
+    cfg["onboarding_version"] = ""
+    cfg["onboarding_done_at"] = ""
+    cfg["onboarding_api_skipped"] = False
+    cfg["onboarding_resume_step"] = 1
+
+
 def config_exists(path: str) -> bool:
     try:
         return os.path.isfile(path) and os.path.getsize(path) > 0

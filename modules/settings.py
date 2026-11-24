@@ -88,6 +88,9 @@ DEFAULTS: dict = {
     "onboarding_done_at": "",
     "onboarding_api_skipped": False,
     "onboarding_resume_step": 1,
+    # 安装目录创建时间锚点：卸载重装后目录重建，锚点变化可识别出“重装”，
+    # 即使 %APPDATA% 里的 config.json 还在，也要重新走首次契约。
+    "install_anchor": "",
 }
 
 

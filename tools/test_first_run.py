@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 import sys
 import tempfile
+import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
@@ -68,6 +69,33 @@ def main() -> None:
             os.remove(path)
         except OSError:
             pass
+
+    # 卸载重装识别：安装目录重建后 ctime 变化；覆盖升级锚点不变。
+    with tempfile.TemporaryDirectory() as d:
+        install = os.path.join(d, "app")
+        os.mkdir(install)
+        cfg_path = os.path.join(d, "config.json")
+        with open(cfg_path, "w", encoding="utf-8") as f:
+            f.write("{}")
+        old = time.time() - 3600
+        os.utime(cfg_path, (old, old))
+        # 旧版本没有锚点：安装目录比 config 新 => 视为重装。
+        assert first_run.reinstall_detected({}, cfg_path, install) is True
+        anchor = first_run.install_anchor(install)
+        assert anchor
+        # 已有锚点且一致 => 普通启动/覆盖升级。
+        assert first_run.reinstall_detected({"install_anchor": anchor},
+                                            cfg_path, install) is False
+        # 锚点变化 => 重装。
+        assert first_run.reinstall_detected({"install_anchor": "1"},
+                                            cfg_path, install) is True
+        done = {"onboarding_state": "done", "onboarding_version": "1.0.6-rc.03",
+                "onboarding_resume_step": 9, "onboarding_api_skipped": True,
+                "api_key": "sk-keep-me"}
+        first_run.reset_for_reinstall(done)
+        assert done["onboarding_state"] == "pending"
+        assert done["onboarding_resume_step"] == 1
+        assert done["api_key"] == "sk-keep-me"
     print("first_run OK")
 
 
