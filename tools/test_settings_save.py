@@ -1,4 +1,4 @@
-"""设置页保存测试：更新渠道 / 自定义间隔 / 退治 Toast 开关。"""
+"""设置页保存测试：更新渠道 / 退治 Toast 开关（不再有更新间隔）。"""
 import os
 import sys
 import time
@@ -35,14 +35,8 @@ chan = next(c for c in combos if "自动（Gitee 优先）" in c.cget("values"))
 chan.set("仅 GitHub（外界神社）")
 chan.event_generate("<<ComboboxSelected>>")
 
-intv = next(c for c in combos if "5 小时" in c.cget("values"))
-intv.set("自定义")
-intv.event_generate("<<ComboboxSelected>>")
-
-spin = next(s for s in widgets if isinstance(s, ttk.Spinbox)
-            and str(s.cget("from")) == "1" and str(s.cget("to")) == "720")
-spin.delete(0, "end")
-spin.insert(0, "7")
+assert not any(isinstance(c, ttk.Combobox) and "5 小时" in c.cget("values")
+               for c in combos), "更新间隔选项应已移除"
 
 auto_cb = next(c for c in widgets
                if isinstance(c, ttk.Checkbutton) and c.cget("text") == "退治")
@@ -56,10 +50,8 @@ for _ in range(10):
     root.update()
     time.sleep(0.05)
 
-print({k: a.cfg.get(k) for k in (
-    "update_channel", "update_interval_hours", "toast_auto")})
+print({k: a.cfg.get(k) for k in ("update_channel", "toast_auto")})
 assert a.cfg.get("update_channel") == "github"
-assert int(a.cfg.get("update_interval_hours") or 0) == 7
 assert a.cfg.get("toast_auto") is False
 root.destroy()
 print("RESULT: PASS")

@@ -1,4 +1,4 @@
-"""首次安装判定 / 状态标记回归。"""
+﻿"""首次安装判定 / 状态标记回归。"""
 from __future__ import annotations
 
 import os
@@ -51,9 +51,9 @@ def main() -> None:
     first_run.mark_in_progress(cfg, 4)
     assert cfg["onboarding_state"] == "in_progress"
     assert cfg["onboarding_resume_step"] == 4
-    first_run.mark_done(cfg, "1.0.6-rc.03", True)
+    first_run.mark_done(cfg, "1.0.6-rc.04", True)
     assert cfg["onboarding_state"] == "done"
-    assert cfg["onboarding_version"] == "1.0.6-rc.03"
+    assert cfg["onboarding_version"] == "1.0.6-rc.04"
     assert cfg["onboarding_api_skipped"] is True
     assert cfg["onboarding_done_at"]
     assert first_run.is_resume(cfg) is False
@@ -89,7 +89,7 @@ def main() -> None:
         # 锚点变化 => 重装。
         assert first_run.reinstall_detected({"install_anchor": "1"},
                                             cfg_path, install) is True
-        done = {"onboarding_state": "done", "onboarding_version": "1.0.6-rc.03",
+        done = {"onboarding_state": "done", "onboarding_version": "1.0.6-rc.04",
                 "onboarding_resume_step": 9, "onboarding_api_skipped": True,
                 "api_key": "sk-keep-me"}
         first_run.reset_for_reinstall(done)

@@ -18,6 +18,7 @@ root.withdraw()
 
 shown = []
 notified = []
+_original_show_dialog = a._show_update_dialog
 a._show_update_dialog = lambda info: shown.append(info)
 a._notify = lambda *args, **kwargs: notified.append((args, kwargs))
 toastmod.show = lambda *args, **kwargs: True
@@ -61,14 +62,53 @@ assert notified and notified[-1][1].get("force") is True
 assert "结界" in notified[-1][0][2]
 print("  OK  manual error -> toast")
 
-# 自动检查发现新版本：仍然只弹一次、不强制
+# 自动检查发现新版本：只弹提示，不再额外 Toast（避免同一件事说两遍）
 shown.clear()
 notified.clear()
 a._update_offered = ""
 a._on_update_result(info, "", False)
-assert shown and notified
-assert notified[-1][1].get("force") is not True
-print("  OK  automatic new version -> dialog + normal toast")
+assert shown
+assert not notified
+print("  OK  automatic new version -> dialog only (no toast)")
+
+# 首次启动完全不检查；后续启动只查一次
+calls = []
+a._check_updates = lambda manual=False: calls.append(manual)
+a._suppress_update_this_run = False
+a._update_startup_scheduled = False
+a._schedule_update_check(first_launch=True)
+assert a._suppress_update_this_run
+a._update_check_startup()
+assert calls == [], "首次启动不应检查更新"
+a._schedule_update_check(first_launch=False)
+a._update_check_startup()
+assert calls == [False], "后续启动应只自动检查一次"
+print("  OK  first launch skipped; later launch checks once")
+
+# 更新窗口：只给下载页/复制/稍后，不再提供代下载
+opened = []
+a._open_url = lambda url: opened.append(url)
+a._show_update_dialog = _original_show_dialog
+a._show_update_dialog(info)
+for _ in range(10):
+    root.update()
+    time.sleep(0.03)
+texts = []
+def walk(w):
+    for c in w.winfo_children():
+        try:
+            texts.append(str(c.cget("text")))
+        except Exception:
+            pass
+        walk(c)
+for w in root.winfo_children():
+    if isinstance(w, tk.Toplevel) and "号外" in w.title():
+        walk(w)
+assert "前往下载页" in texts
+assert "复制链接" in texts
+assert "稍后再说" in texts
+assert "让文文去取" not in texts
+print("  OK  update dialog offers manual download only")
 
 # 去重键（避开安静时段，否则 _do_notify 会按设计不写 seen）
 a._toast_seen = {}

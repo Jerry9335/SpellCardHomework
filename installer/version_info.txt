@@ -1,7 +1,7 @@
 VSVersionInfo(
   ffi=FixedFileInfo(
-    filevers=(1, 0, 6, 3),
-    prodvers=(1, 0, 6, 3),
+    filevers=(1, 0, 6, 4),
+    prodvers=(1, 0, 6, 4),
     mask=0x3f,
     flags=0x0,
     OS=0x40004,
@@ -14,12 +14,12 @@ VSVersionInfo(
       StringTable('080404B0', [
         StringStruct('CompanyName', 'Shinichi, Fastrof & 会哈气の祥'),
         StringStruct('FileDescription', '符卡作业簿'),
-        StringStruct('FileVersion', '1.0.6-rc.03'),
+        StringStruct('FileVersion', '1.0.6-rc.04'),
         StringStruct('InternalName', 'SpellCardHomework'),
         StringStruct('LegalCopyright', '© 2025 Shinichi, Fastrof & 会哈气の祥'),
         StringStruct('OriginalFilename', 'SpellCardHomework.exe'),
         StringStruct('ProductName', '符卡作业簿'),
-        StringStruct('ProductVersion', '1.0.6-rc.03')
+        StringStruct('ProductVersion', '1.0.6-rc.04')
       ])
     ]),
     VarFileInfo([VarStruct('Translation', [0x0804, 1200])])

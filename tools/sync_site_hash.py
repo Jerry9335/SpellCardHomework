@@ -1,7 +1,7 @@
-"""打包后同步官网校验和。
+﻿"""打包后同步官网校验和。
 
 用法（在项目根目录）：
-    python tools/sync_site_hash.py installer/Output/SpellCardHomework-Setup-1.0.6-rc.03.exe
+    python tools/sync_site_hash.py installer/Output/SpellCardHomework-Setup-1.0.6-rc.04.exe
 
 它会：
 1. 计算安装包 SHA256 / 大小

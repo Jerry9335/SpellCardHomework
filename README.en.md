@@ -7,7 +7,7 @@
   <img src="https://img.shields.io/badge/windows-0078D6?logo=windows&amp;logoColor=white" alt="Windows 10 / 11" />
   <img src="https://img.shields.io/badge/Python-14354C.svg?logo=python&amp;logoColor=white" alt="Python 3.10+" />
   <img src="https://img.shields.io/badge/License-MIT-e8c46a.svg" alt="MIT License" />
-  <img src="https://img.shields.io/badge/version-1.0.6--rc.03-c8323c.svg" alt="v1.0.6-rc.03" />
+  <img src="https://img.shields.io/badge/version-1.0.6--rc.04-c8323c.svg" alt="v1.0.6-rc.04" />
   <img src="https://img.shields.io/badge/Touhou-Project%20Fan%20Work-c8323c.svg" alt="Touhou Project fan work" />
   <img src="https://img.shields.io/badge/QQ-EB1923?logo=tencent-qq&amp;logoColor=white" alt="QQ" />
   <img src="https://img.shields.io/badge/Gmail-D14836?logo=gmail&amp;logoColor=white" alt="Gmail" />
@@ -37,7 +37,7 @@ A small Windows desktop tool: **screenshot → OCR → translate → AI answer �
 - 🔍 **Balance check**: DeepSeek account balance
 - 🔐 **One machine, one code**: Ed25519 signatures, 5-day trial on first launch
 - 🌸 **Touhou Project fan-art UI** (AI-generated)
-- 📰 **Extra download**: built-in multi-thread downloader with 1–32 threads, resume, SHA256, silent install and restart prompt
+- 📰 **Update notice**: checks once per launch and only shows a prompt; open the download page or copy the link, never auto-installs
 
 ## Screenshots
 
@@ -64,7 +64,7 @@ Download from [Releases](../../releases):
 
 | File | Description |
 | --- | --- |
-| `SpellCardHomework-Setup-1.0.6-rc.03.exe` | Standard installer (Inno Setup) |
+| `SpellCardHomework-Setup-1.0.6-rc.04.exe` | Standard installer (Inno Setup) |
 
 ### Option 2: Run from source
 
@@ -146,6 +146,17 @@ docs/                  screenshots and docs
 
 ## Changelog
 
+### v1.0.6-rc.04 (2026-11-24)
+
+- **Update flow**: no check on the very first install/launch; one check per later launch
+- **Notice only**: new versions open a prompt with "Go to download page", "Copy link" and "Later"; no auto download, no auto install, no auto exit
+- **Later means next launch**: closing the prompt does not suppress the next startup notice
+- **Simpler settings**: removed interval, auto-check toggle, snooze and download-thread controls
+- **First-run fixes**: setup is no longer hidden behind the main window; the provider list scrolls and keeps footer buttons visible
+- **Assets/font fixes**: avatars load from Start-menu launches and non-install directories; title font is consistent
+- **Reinstall fix**: an install-directory anchor resets the first-run flow after uninstall/reinstall while keeping API keys, models and ledger
+- **Version marker**: app, installer, splash and docs unified at v1.0.6-rc.04
+
 ### v1.0.6-rc.03 (2026-11-24)
 
 - **First-run contract**: after activation, a 3-step wizard for provider, API key (test/skip), and primary/vision models
@@ -202,10 +213,10 @@ Remove-ItemProperty "HKCU:\Software\Shinichi\SpellCardHomework" -Name trial -Err
 ```
 
 **Q: The first launch went straight to the main window.**
-Check that About shows **v1.0.6-rc.03**, then look at the `access=` lines in `%APPDATA%\SpellCardHomework\boot.log`.
+Check that About shows **v1.0.6-rc.04**, then look at the `access=` lines in `%APPDATA%\SpellCardHomework\boot.log`.
 
 **Q: The activation code is very long.**
-v1.0.6-rc.03 codes are about 130 characters — paste the whole string.
+v1.0.6-rc.04 codes are about 130 characters — paste the whole string.
 
 ## License and assets
 

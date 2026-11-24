@@ -232,6 +232,9 @@ class App:
         self._launch_time = time.time()
         self._update_offered = ""
         self._update_last_source = ""
+        self._update_startup_scheduled = False
+        self._suppress_update_this_run = False
+        self._first_launch_run = False
         self._web_user_stop = True
         self._web_round_failed = False
 
@@ -252,7 +255,6 @@ class App:
         self.root.after(300, self._refresh_windows_async)
         self.root.after(3000, self._render_banner)
         self.root.after(12000, self._rotate_quote)
-        self.root.after(5000, self._update_tick)
         self.root.after(2500, self._trial_reminder)
         self.root.after(1200, self._watch_barrier)
         self.clip_var.trace_add("write", lambda *_: setattr(self, "_clip_enabled", bool(self.clip_var.get())))
@@ -1840,41 +1842,13 @@ class App:
         add_row(g1, 11, "香火钱", balance_row, "API 余额（多平台）")
 
         # --- 文文的号外 ---
-        g3 = section("文文的号外（自动检查更新）")
-        upd_on = tk.BooleanVar(value=self.update_enabled_var.get())
-        add_row(g3, 0, "自动打听",
-                ttk.Checkbutton(g3, text="让文文定期去打听新版本", variable=upd_on),
-                "关掉就完全手动")
+        g3 = section("文文的号外（每次启动简报）")
 
         ch_var = tk.StringVar(value=self.update_channel_var.get())
-        add_row(g3, 1, "报信路线",
+        add_row(g3, 0, "报信路线",
                 ttk.Combobox(g3, textvariable=ch_var, state="readonly",
                              values=list(self.CHANNEL_LABELS.values())),
                 "Gitee 国内快，GitHub 是主仓库")
-
-        int_row = tk.Frame(g3, bg=C["bg"])
-        int_var = tk.StringVar(value=self.update_interval_var.get())
-        ttk.Combobox(int_row, textvariable=int_var, state="readonly", width=10,
-                     values=list(self.INTERVAL_LABELS.values()) + ["自定义"]).pack(side="left")
-        custom_var = tk.IntVar(value=int(self.update_custom_var.get()))
-        ttk.Spinbox(int_row, from_=1, to=720, textvariable=custom_var,
-                    width=6).pack(side="left", padx=(8, 2))
-        tk.Label(int_row, text="小时", bg=C["bg"], fg=C["muted"],
-                 font=(self.F_UI, 9)).pack(side="left")
-        add_row(g3, 2, "报信间隔", int_row, "多久打听一次；自定义填小时")
-
-        sn_row = tk.Frame(g3, bg=C["bg"])
-        self._snooze_var = tk.StringVar()
-        tk.Label(sn_row, textvariable=self._snooze_var, bg=C["bg"], fg=C["gold"],
-                 font=(self.F_UI, 9)).pack(side="left")
-        for text, cmd in (("选日子", self._pick_snooze),
-                          ("歇 3 天", lambda: self._snooze_days(3)),
-                          ("歇 7 天", lambda: self._snooze_days(7))):
-            tk.Button(sn_row, text=text, command=cmd, bg=C["panel2"], fg=C["text"],
-                      activebackground=C["accent_dark"], activeforeground="#ffffff",
-                      relief="flat", bd=0, padx=8, pady=1, cursor="hand2",
-                      font=(self.F_UI, 9)).pack(side="left", padx=(8, 0))
-        add_row(g3, 3, "封笔到", sn_row, "暂停自动打听；手动不受影响")
 
         lc_row = tk.Frame(g3, bg=C["bg"])
         self._update_last_var = tk.StringVar()
@@ -1885,16 +1859,11 @@ class App:
                   bg=C["panel2"], fg=C["text"], activebackground=C["accent_dark"],
                   activeforeground="#ffffff", relief="flat", bd=0, padx=10, pady=1,
                   cursor="hand2", font=(self.F_UI, 9)).pack(side="left", padx=(10, 0))
-        add_row(g3, 4, "上次打听", lc_row, "最近一次检查结果")
+        add_row(g3, 1, "上次打听", lc_row, "最近一次检查结果")
 
-        thr_row = tk.Frame(g3, bg=C["bg"])
-        thr_var = tk.IntVar(value=int(self.update_max_threads_var.get()))
-        ttk.Spinbox(thr_row, from_=1, to=32, textvariable=thr_var,
-                    width=6).pack(side="left")
-        tk.Label(thr_row, text="个线程", bg=C["bg"], fg=C["muted"],
-                 font=(self.F_UI, 9)).pack(side="left", padx=(6, 0))
-        add_row(g3, 5, "最多分片", thr_row,
-                "1–32；服务器不支持 Range 时自动降为 1 线程")
+        tip = tk.Label(g3, text="启动时会自动打听一次；发现新版本只提示，不自动下载、不自动安装。",
+                       bg=C["bg"], fg=C["muted"], font=(self.F_UI, 9))
+        add_row(g3, 2, "更新方式", tip, "首次安装首次启动不检查")
         self._refresh_update_labels()
 
         # --- 式神的传讯 ---
@@ -2072,14 +2041,7 @@ class App:
             self.web_port_var.set(int(web_port_var.get() or 9222))
             self.continue_wrong_var.set(bool(cont_var.get()))
             self.start_url_var.set(start_url_var.get().strip() or "https://kysu.edu")
-            self.update_enabled_var.set(bool(upd_on.get()))
             self.update_channel_var.set(ch_var.get())
-            self.update_interval_var.set(int_var.get())
-            try:
-                self.update_custom_var.set(int(custom_var.get()))
-                self.update_max_threads_var.set(max(1, min(32, int(thr_var.get()))))
-            except Exception:
-                pass
             self.toast_enabled_var.set(bool(toast_on.get()))
             self.toast_update_var.set(bool(toast_upd.get()))
             self.toast_trial_var.set(bool(toast_trial.get()))
@@ -2665,21 +2627,23 @@ class App:
             daemon=True,
         ).start()
 
-    def _update_tick(self) -> None:
-        try:
-            from modules import update as _up
-            due = _up.due(self.cfg)
-            # 「每次启动」：本次启动查过就不再自动查
-            if due and self._interval_hours() == 0 and                     self._update_last_check >= getattr(self, "_launch_time", 0):
-                due = False
-            if due and not self._update_checking:
-                self._check_updates(manual=False)
-        except Exception:
-            pass
-        try:
-            self.root.after(30 * 60 * 1000, self._update_tick)
-        except Exception:
-            pass
+    def _schedule_update_check(self, first_launch: bool = False) -> None:
+        """每次启动只检查一次；首次安装/首启流程中完全不检查。"""
+        self._first_launch_run = bool(first_launch)
+        self._suppress_update_this_run = bool(first_launch)
+        if first_launch:
+            _boot_log("update: skipped on first launch")
+            return
+        if self._update_startup_scheduled:
+            return
+        self._update_startup_scheduled = True
+        # 等主界面稳定、首启窗口判定完成后再打听一次。
+        self.root.after(2500, self._update_check_startup)
+
+    def _update_check_startup(self) -> None:
+        if self._suppress_update_this_run or self._update_checking:
+            return
+        self._check_updates(manual=False)
 
     def _check_updates(self, manual: bool = False) -> None:
         if self._update_checking:
@@ -2723,17 +2687,11 @@ class App:
 
                 if manual:
                     if first_offer:
-                        toast_body = f"文文：新号外印好了——{tag} 上架。要现在去取吗？"
+                        toast_body = f"文文：新号外印好了——{tag} 上架。要现在去下载吗？"
                     else:
-                        toast_body = f"文文：{tag} 的号外还压在文文那儿，去取吧。"
+                        toast_body = f"文文：{tag} 的号外还压在文文那儿，去下载页看看吧。"
                     self._notify("update", "博麗神社 · 号外", toast_body,
                                  avatar="aya", force=True)
-                elif first_offer:
-                    self._notify(
-                        "update", "博麗神社 · 号外",
-                        f"文文：新号外印好了——{tag} 上架。要现在去取吗？",
-                        key=tag, avatar="aya",
-                    )
             elif manual:
                 self._status(f"文文：没有新号外，v{settings.APP_VERSION} 还是最新的。", "info")
                 self._notify(
@@ -2788,72 +2746,40 @@ class App:
         row = tk.Frame(win, bg=C["bg"])
         row.pack(fill="x", padx=24, pady=(0, 16))
 
-        def go_download() -> None:
-            win.destroy()
-            self._start_update_download(info)
-
         def open_release() -> None:
-            self._open_url(info.get("url") or info.get("download") or "")
-
-        def snooze() -> None:
+            url = info.get("url") or info.get("download") or ""
+            if not url:
+                self._status("文文：这期号外没留下载地址，去仓库的 Releases 页看看吧。", "warn")
+                return
             win.destroy()
-            self._pick_snooze()
+            self._open_url(url)
 
-        tk.Button(row, text="让文文去取", command=go_download, bg=C["accent"], fg="white",
+        def copy_link() -> None:
+            url = info.get("url") or info.get("download") or ""
+            if not url:
+                self._status("文文：这期号外没留下载地址。", "warn")
+                return
+            try:
+                self.root.clipboard_clear()
+                self.root.clipboard_append(url)
+                self.root.update_idletasks()
+                self._status("文文：下载链接已经抄到剪贴板了。", "ok")
+            except Exception:
+                self._status("文文：剪贴板被结界卡住了，直接去号外页吧。", "warn")
+
+        tk.Button(row, text="前往下载页", command=open_release, bg=C["accent"], fg="white",
                   relief="flat", bd=0, padx=16, pady=5, cursor="hand2",
                   font=(self.F_UI, 10, "bold")).pack(side="left")
-        tk.Button(row, text="打开号外页", command=open_release, bg=C["panel2"],
+        tk.Button(row, text="复制链接", command=copy_link, bg=C["panel2"],
                   fg=C["text"], relief="flat", bd=0, padx=12, pady=5,
                   cursor="hand2", font=(self.F_UI, 10)).pack(side="left", padx=(8, 0))
-        tk.Button(row, text="晚点再说", command=win.destroy, bg=C["panel2"], fg=C["muted"],
+        tk.Button(row, text="稍后再说", command=win.destroy, bg=C["panel2"], fg=C["muted"],
                   relief="flat", bd=0, padx=14, pady=5, cursor="hand2",
                   font=(self.F_UI, 10)).pack(side="left", padx=(10, 0))
-        tk.Button(row, text="封笔到…", command=snooze, bg=C["panel2"], fg=C["text"],
-                  relief="flat", bd=0, padx=14, pady=5, cursor="hand2",
-                  font=(self.F_UI, 10)).pack(side="right")
 
-    def _start_update_download(self, info: dict) -> None:
-        from modules import update_ui
-
-        try:
-            info = dict(info)
-            info["max_threads"] = max(1, min(32, int(self.update_max_threads_var.get())))
-        except Exception:
-            info = dict(info)
-            info["max_threads"] = 8
-        if not str(info.get("download") or "").lower().startswith(("http://", "https://")):
-            self._status("文文：这张号外没带安装包地址，先去号外页看看。", "warn")
-            self._open_url(info.get("url") or "")
-            return
-        avatar = os.path.join(ASSETS, "char", "toast", "avatar_aya.png")
-        try:
-            self._download_win = update_ui.start_download(
-                self.root, info, C, self.F_UI, self.F_TITLE, avatar,
-                self._begin_update_install)
-            self._status("文文：号外正在取件，取件匣已经打开。", "info")
-        except Exception as e:
-            self._status(f"文文：取件匣打不开了……{e}", "err")
-
-    def _begin_update_install(self, installer: str) -> None:
-        from modules import update_install
-
-        if not os.path.exists(installer):
-            self._status("文文：号外已经不在取件匣里了。", "warn")
-            return
-        if not getattr(sys, "frozen", False):
-            self._status("文文：开发版先不自动张贴，安装包已放在取件匣。", "info")
-            try:
-                os.startfile(os.path.dirname(installer))
-            except Exception:
-                pass
-            return
-        try:
-            update_install.start_install(
-                installer, os.path.dirname(sys.executable), sys.executable)
-            self._status("文文：号外验好了，正在张贴……", "ok")
-            self.root.after(700, self.root.destroy)
-        except Exception as e:
-            self._status(f"紫：张贴失败……{e}", "err")
+        tk.Label(win, text="只提示，不自动下载、不自动安装；下载后由你亲自运行安装包。",
+                 bg=C["bg"], fg=C["muted"], font=(self.F_UI, 9)).pack(pady=(0, 10))
+        win.protocol("WM_DELETE_WINDOW", win.destroy)
 
     def _pick_snooze(self) -> None:
         import datetime as _dt
@@ -5903,6 +5829,7 @@ def main() -> None:
                     splash[0].destroy()
             except Exception:
                 pass
+        _show_first = False
         try:
             _show_first = first_run.should_show(app.cfg, pre_access, config_existed)
             _boot_log(
@@ -5913,12 +5840,18 @@ def main() -> None:
                 f"resume={app.cfg.get('onboarding_resume_step')!r}")
             app.maybe_start_first_run(pre_access, config_existed)
         except Exception as _fr_e:
+            _show_first = True
             import traceback
             _boot_log(f"first_run failed: {_fr_e!r}\n{traceback.format_exc()[-1200:]}")
             try:
                 app._status(f"首次安装引导启动失败：{_fr_e}", "warn")
             except Exception:
                 pass
+        # 更新检查：首次安装/首启流程中完全跳过；之后每次启动只查一次。
+        try:
+            app._schedule_update_check(first_launch=bool(_show_first))
+        except Exception as _upd_e:
+            _boot_log(f"update schedule failed: {_upd_e!r}")
 
     if splash is not None:
         splash[0].bind("<Button-1>", lambda _e: boot())

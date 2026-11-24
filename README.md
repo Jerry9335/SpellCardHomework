@@ -7,7 +7,7 @@
   <img src="https://img.shields.io/badge/windows-0078D6?logo=windows&amp;logoColor=white" alt="Windows 10 / 11" />
   <img src="https://img.shields.io/badge/Python-14354C.svg?logo=python&amp;logoColor=white" alt="Python 3.10+" />
   <img src="https://img.shields.io/badge/License-MIT-e8c46a.svg" alt="MIT License" />
-  <img src="https://img.shields.io/badge/version-1.0.6--rc.03-c8323c.svg" alt="v1.0.6-rc.03" />
+  <img src="https://img.shields.io/badge/version-1.0.6--rc.04-c8323c.svg" alt="v1.0.6-rc.04" />
   <img src="https://img.shields.io/badge/Touhou-Project%20Fan%20Work-c8323c.svg" alt="Touhou Project fan work" />
   <img src="https://img.shields.io/badge/QQ-EB1923?logo=tencent-qq&amp;logoColor=white" alt="QQ" />
   <img src="https://img.shields.io/badge/Gmail-D14836?logo=gmail&amp;logoColor=white" alt="Gmail" />
@@ -37,7 +37,7 @@ Windows 桌面小工具：**截屏识题 → 英文翻译 → AI 作答 → 全�
 - 🔍 **查余额**：DeepSeek 账户余额查询
 - 🔐 **一机一码**：Ed25519 签名，首次启动可试用 5 天
 - 🌸 **东方 Project 风格界面**（AI 生成的二次创作立绘）
-- 📰 **号外取件**：内置多线程下载器，支持 1–32 线程、断点续传、SHA256 校验、自动覆盖安装与重启提示
+- 📰 **号外提示**：启动时检查一次新版本，只提示、不自动下载；可跳转下载页或复制链接，由你亲自安装
 
 ## 截图
 
@@ -64,7 +64,7 @@ Windows 桌面小工具：**截屏识题 → 英文翻译 → AI 作答 → 全�
 
 | 文件 | 说明 |
 | --- | --- |
-| `SpellCardHomework-Setup-1.0.6-rc.03.exe` | 常规安装包（Inno Setup） |
+| `SpellCardHomework-Setup-1.0.6-rc.04.exe` | 常规安装包（Inno Setup） |
 
 ### 方式二：源码运行
 
@@ -146,6 +146,17 @@ docs/                  截图与文档
 
 ## 更新日志
 
+### v1.0.6-rc.04（2026-11-24）
+
+- **更新机制调整**：首次安装 / 首次启动不再检查更新；之后每次启动只检查一次
+- **只提示，不自动装**：发现新版本弹窗，只提供「前往下载页」「复制链接」「稍后再说」；不再自动下载、自动安装或自动退出
+- **稍后再说**：关闭弹窗后不会记住跳过，下次启动继续提示
+- **设置简化**：移除更新间隔、自动检查开关、封笔与下载线程设置，只保留渠道、上次检查与「立即打听」
+- **首启体验修复**：契约窗口不再被主界面遮挡；展开更多提供商可滚动，底部按钮不会再被挤出窗口
+- **资源与字体修复**：从开始菜单/非安装目录启动也能正确加载角色头像；标题字体统一
+- **重装修复**：卸载后重装会通过安装目录锚点识别，并重新进入结界契约与新手引导（API Key/模型/账本保留）
+- **版本标记**：程序、安装器、启动图与说明统一为 v1.0.6-rc.04
+
 ### v1.0.6-rc.03（2026-11-24）
 
 - **首次安装契约**：激活授权后进入 3 页引导——选举结界来源、填写/测试 API Key、选择主模型与视觉模型；也可跳过，稍后在设置里补
@@ -202,10 +213,10 @@ Remove-ItemProperty "HKCU:\Software\Shinichi\SpellCardHomework" -Name trial -Err
 ```
 
 **Q：首次启动直接进了主界面？**
-先确认「关于程序」里版本是 **v1.0.6-rc.03**，再看 `%APPDATA%\SpellCardHomework\boot.log` 里的 `access=` 记录。
+先确认「关于程序」里版本是 **v1.0.6-rc.04**，再看 `%APPDATA%\SpellCardHomework\boot.log` 里的 `access=` 记录。
 
 **Q：激活码太长？**
-v1.0.6-rc.03 的激活码约 130 字符，整段复制粘贴即可。
+v1.0.6-rc.04 的激活码约 130 字符，整段复制粘贴即可。
 
 ## 开源协议与素材说明
 

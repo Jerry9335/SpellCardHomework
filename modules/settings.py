@@ -1,4 +1,4 @@
-"""配置读写：%APPDATA%\\SpellCardHomework\\config.json，API Key 用 Windows DPAPI 加密。"""
+﻿"""配置读写：%APPDATA%\\SpellCardHomework\\config.json，API Key 用 Windows DPAPI 加密。"""
 from __future__ import annotations
 
 import base64
@@ -9,7 +9,7 @@ import os
 
 APP_DIRNAME = "SpellCardHomework"
 APP_TITLE = "符卡作业簿"
-APP_VERSION = "1.0.6-rc.03"
+APP_VERSION = "1.0.6-rc.04"
 
 
 def config_dir() -> str:

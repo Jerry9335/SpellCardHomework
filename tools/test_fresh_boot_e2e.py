@@ -22,9 +22,11 @@ os.environ["LOCALAPPDATA"] = os.path.join(tmp, "local")
 import app  # noqa: E402
 from modules import license as lic  # noqa: E402
 from modules import setup_wizard, onboarding  # noqa: E402
+from modules import update as upd  # noqa: E402
 
 seen: dict[str, object] = {"setup": None, "onboarding": None, "errors": []}
 calls = {"n": 0}
+update_calls: list[int] = []
 
 
 def fake_check_access(update=True):
@@ -74,10 +76,17 @@ orig_tk = tk.Tk
 orig_show_activation = app.show_activation
 orig_check_access = lic.check_access
 orig_status = lic.status
+orig_update_check = upd.check
 try:
     lic.check_access = fake_check_access
     lic.status = fake_status
     app.show_activation = fake_activation
+
+    def fake_update_check(*args, **kwargs):
+        update_calls.append(1)
+        return {"version": "9.9.9", "tag": "v9.9.9", "notes": "", "url": ""}
+
+    upd.check = fake_update_check
 
     def make_root():
         r = orig_tk()
@@ -92,9 +101,11 @@ finally:
     app.show_activation = orig_show_activation
     lic.check_access = orig_check_access
     lic.status = orig_status
+    upd.check = orig_update_check
     shutil.rmtree(tmp, ignore_errors=True)
 
 print("seen:", seen)
 assert not seen["errors"], seen["errors"]
 assert seen["setup"] is True, "fresh activation did not open SetupWizard"
+assert not update_calls, "first launch must not check for updates"
 print("RESULT: PASS")

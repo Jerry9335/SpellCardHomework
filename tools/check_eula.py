@@ -1,4 +1,4 @@
-"""检查安装包的用户许可协议页：/CURRENTUSER 跳过模式对话框，翻到许可页截图。"""
+﻿"""检查安装包的用户许可协议页：/CURRENTUSER 跳过模式对话框，翻到许可页截图。"""
 import ctypes
 import os
 import subprocess
@@ -12,7 +12,7 @@ sys.path.insert(0, ROOT)
 from modules import capture  # noqa: E402
 
 capture.make_dpi_aware()
-setup = os.path.join(ROOT, "installer", "Output", "SpellCardHomework-Setup-1.0.6-rc.03.exe")
+setup = os.path.join(ROOT, "installer", "Output", "SpellCardHomework-Setup-1.0.6-rc.04.exe")
 proc = subprocess.Popen([setup, "/CURRENTUSER", "/LANG=chinesesimplified"])
 
 user32 = ctypes.windll.user32

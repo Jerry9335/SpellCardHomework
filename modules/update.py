@@ -1,9 +1,9 @@
-"""检查更新：GitHub + Gitee 双渠道。
+﻿"""检查更新：GitHub + Gitee 双渠道。
 
 返回统一结构：
     {
-        "version": "1.0.6-rc.03",  # 去掉 v 的版本号
-        "tag": "v1.0.6-rc.03",
+        "version": "1.0.6-rc.04",  # 去掉 v 的版本号
+        "tag": "v1.0.6-rc.04",
         "notes": "...",           # Release 说明（纯文本）
         "url": "https://...",     # Release 页面
         "download": "https://...",# 安装包地址（没有则同 url）

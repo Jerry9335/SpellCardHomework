@@ -1,4 +1,4 @@
-# 打包说明
+﻿# 打包说明
 
 ## 1. 独立程序（PyInstaller）
 
@@ -23,7 +23,7 @@ python -m PyInstaller --noconfirm --clean --windowed --name "SpellCardHomework" 
 "D:\Program Files\Inno Setup 7\ISCC.exe" installer\SpellCardHomework.iss
 ```
 
-产物：`installer\Output\SpellCardHomework-Setup-1.0.6-rc.03.exe`
+产物：`installer\Output\SpellCardHomework-Setup-1.0.6-rc.04.exe`
 
 - 中文语言文件放在 `installer\Languages\ChineseSimplified.isl`
 - 用户许可协议在 `installer\EULA.txt`，由 `.iss` 里的 `LicenseFile=EULA.txt` 引用（同样需要 UTF-8 with BOM）
@@ -44,5 +44,5 @@ powershell -ExecutionPolicy Bypass -File installer\build_msix.ps1
 ## 版本号
 
 - `SpellCardHomework.iss` 里的 `MyAppVersion`
-- `AppxManifest.xml` 里的 `Version="1.0.6.3"`（MSIX 必须是四段）
+- `AppxManifest.xml` 里的 `Version="1.0.6.4"`（MSIX 必须是四段）
 - 发布前记得同步升级
