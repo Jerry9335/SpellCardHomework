@@ -153,7 +153,7 @@ docs/                  screenshots and docs
 - **Later means next launch**: closing the prompt does not suppress the next startup notice
 - **Simpler settings**: removed interval, auto-check toggle, snooze and download-thread controls
 - **First-run fixes**: setup is no longer hidden behind the main window; the provider list scrolls and keeps footer buttons visible
-- **Assets/font fixes**: avatars load from Start-menu launches and non-install directories; title font is consistent
+- **Assets/font fixes**: avatars load from Start-menu launches and non-install directories; title font is consistent; the third author avatar now matches the circular gold-ring style
 - **Reinstall fix**: an install-directory anchor resets the first-run flow after uninstall/reinstall while keeping API keys, models and ledger
 - **Version marker**: app, installer, splash and docs unified at v1.0.6-rc.04
 
