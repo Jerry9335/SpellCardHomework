@@ -47,6 +47,15 @@ def main() -> None:
     assert app._setup_win is not None, "setup wizard did not open"
     assert app.cfg.get("onboarding_state") in (
         first_run.STATE_PENDING, first_run.STATE_IN_PROGRESS)
+    # 「之后再配」必须进入第 2 签，而不是直接结束/退出契约。
+    next_config = next(
+        b for b in app._setup_win.foot_right.winfo_children()
+        if str(b.cget("text")) == "之后再配")
+    next_config.invoke()
+    pump(root, 0.2)
+    assert app._setup_win.step == 2, "之后再配 should enter step 2"
+    app._setup_win.destroy()
+    app._setup_win = None
     app._on_setup_done({"skipped": True})
     pump(root, 0.9)
     assert app._onboarding_win is not None, "onboarding did not open"

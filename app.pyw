@@ -1430,6 +1430,32 @@ class App:
         self._setup_win = setup_wizard.SetupWizard(
             self, self._on_setup_done, start_step=start_step,
             on_progress=self._on_setup_progress)
+        _boot_log("first-run setup window created")
+        # 某些 VM/远程桌面里 Toplevel 创建后会被主窗口或激活窗口压到后面。
+        # 创建完成后强制显示一次，确保用户一定看得到契约页。
+        self.root.after(80, self._ensure_setup_visible)
+
+    def _ensure_setup_visible(self) -> None:
+        win = self._setup_win
+        if win is None or not getattr(win, "winfo_exists", lambda: False)():
+            return
+        try:
+            win.deiconify()
+            win.lift()
+            win.attributes("-topmost", True)
+            win.focus_force()
+        except Exception:
+            pass
+        try:
+            _boot_log(
+                f"first-run setup shown mapped={win.winfo_ismapped()} "
+                f"state={win.state()} geom={win.geometry()}")
+        except Exception:
+            pass
+        try:
+            win.after(1200, lambda: win.attributes("-topmost", False))
+        except Exception:
+            pass
 
     def _on_setup_done(self, result: dict) -> None:
         self._setup_win = None
@@ -1450,7 +1476,21 @@ class App:
             settings.save(self.cfg)
         except Exception:
             pass
-        self.root.after(180, lambda: self.open_onboarding(manual=False, start_step=1))
+        def _open_safe() -> None:
+            try:
+                self.open_onboarding(manual=False, start_step=1)
+            except Exception as exc:
+                import traceback
+                _boot_log(f"onboarding UI failed: {exc!r}\n{traceback.format_exc()[-1200:]}")
+                # 引导打不开也不能让主程序看起来“退出了”
+                try:
+                    self.root.deiconify()
+                    self.root.lift()
+                    self._status("新手引导启动失败，先进主界面；可在设置里重看。", "warn")
+                except Exception:
+                    pass
+
+        self.root.after(180, _open_safe)
 
     def _on_onboarding_done(self, skipped: bool = False) -> None:
         self._onboarding_win = None
@@ -1498,6 +1538,9 @@ class App:
         self._onboarding_pre_access = pre_access
         self._onboarding_config_existed = config_existed
         if not first_run.should_show(self.cfg, pre_access, config_existed):
+            _boot_log(
+                f"first-run skipped state={self.cfg.get('onboarding_state')!r} "
+                f"pre_access={pre_access!r} has_setup={first_run.has_setup(self.cfg)}")
             if (not str(self.cfg.get("onboarding_state") or "").strip()
                     and (config_existed or pre_access != "fresh")):
                 try:

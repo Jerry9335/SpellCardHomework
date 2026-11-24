@@ -120,9 +120,28 @@ class SetupWizard(tk.Toplevel):
         self.resizable(False, False)
         self.transient(app.root)
         sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
-        w, h = 1180, 760
-        w, h = min(w, sw - 30), min(h, sh - 50)
-        self.geometry(f"{w}x{h}+{max(0, (sw - w) // 2)}+{max(0, (sh - h) // 2 - 20)}")
+        # 用 Windows 工作区（排除任务栏）而不是整块屏幕，避免在小屏/缩放的 VM 上
+        # 窗口底部被任务栏裁掉，看起来像“契约页只显示了一部分”。
+        wx, wy, ww, wh = 0, 0, sw, sh
+        try:
+            import ctypes
+
+            class _Rect(ctypes.Structure):
+                _fields_ = [("left", ctypes.c_long), ("top", ctypes.c_long),
+                            ("right", ctypes.c_long), ("bottom", ctypes.c_long)]
+
+            _r = _Rect()
+            if ctypes.windll.user32.SystemParametersInfoW(
+                    48, 0, ctypes.byref(_r), 0):
+                wx, wy = int(_r.left), int(_r.top)
+                ww, wh = int(_r.right - _r.left), int(_r.bottom - _r.top)
+        except Exception:
+            pass
+        w = max(760, min(1180, ww - 40))
+        h = max(560, min(760, wh - 40))
+        x = wx + max(0, (ww - w) // 2)
+        y = wy + max(0, (wh - h) // 2)
+        self.geometry(f"{w}x{h}+{x}+{y}")
         try:
             self.attributes("-topmost", True)
         except Exception:
@@ -332,8 +351,9 @@ class SetupWizard(tk.Toplevel):
             tk.Label(self.content, text="点击卡片切换来源；选好后进入下一步。", bg=self.bg,
                      fg=self.muted, font=(self.F_UI, 9), anchor="w").pack(fill="x", pady=(10, 0))
         self._paint_provider_selection()
+        # 「之后再配」只是不填 Key，不是退出契约；仍然进入下一签。
         self._render_foot(primary="就借这家 →", on_primary=self._to_key,
-                          secondary="之后再配", on_secondary=lambda: self._finish(skip_setup=True))
+                          secondary="之后再配", on_secondary=self._to_key)
         if getattr(self, "_more_open", False):
             self.hint_var.set("更多提供商已展开——用滚轮查看全部，选好后进入下一步。")
         else:
