@@ -181,6 +181,7 @@ class App:
         self._settings_win: tk.Toplevel | None = None
         self._setup_win = None
         self._onboarding_win = None
+        self._first_run_hide_main = False
         self._manual_onboarding = False
         self._onboarding_pre_access = ""
         self._onboarding_config_existed = False
@@ -1476,6 +1477,9 @@ class App:
             settings.save(self.cfg)
         except Exception:
             pass
+        # 从“主界面隐藏”的首次安装路径回来：引导需要主界面作背景。
+        self._reveal_main_for_onboarding()
+
         def _open_safe() -> None:
             try:
                 self.open_onboarding(manual=False, start_step=1)
@@ -1534,6 +1538,17 @@ class App:
             self, self._on_onboarding_done, start_step=start_step,
             on_progress=self._on_onboarding_progress)
 
+    def _reveal_main_for_onboarding(self) -> None:
+        if not self._first_run_hide_main:
+            return
+        self._first_run_hide_main = False
+        try:
+            self.root.deiconify()
+            self.root.lift()
+            _boot_log("first-run: main window revealed for onboarding")
+        except Exception:
+            pass
+
     def maybe_start_first_run(self, pre_access: str, config_existed: bool) -> None:
         self._onboarding_pre_access = pre_access
         self._onboarding_config_existed = config_existed
@@ -1554,16 +1569,26 @@ class App:
             settings.save(self.cfg)
         except Exception:
             pass
+        self._first_run_hide_main = True
         resume = int(self.cfg.get("onboarding_resume_step") or 1)
         self.root.after(350, lambda: self._start_first_run_resume(resume))
 
     def _start_first_run_resume(self, resume: int) -> None:
         try:
             if resume > first_run.SETUP_STEPS:
+                self._reveal_main_for_onboarding()
                 self.open_onboarding(manual=False,
                                      start_step=max(1, min(first_run.ONBOARD_STEPS,
                                                            resume - first_run.SETUP_STEPS)))
             else:
+                # 契约页是首次安装最关键的窗口：主界面先藏起来，避免在 VM /
+                # 远程桌面上把契约窗口压到后面，让用户以为“契约页没出来”。
+                if self._first_run_hide_main:
+                    try:
+                        self.root.withdraw()
+                        _boot_log("first-run setup: main window withdrawn")
+                    except Exception:
+                        pass
                 self.start_setup_wizard(start_step=max(1, min(first_run.SETUP_STEPS, resume)))
         except Exception as exc:
             import traceback

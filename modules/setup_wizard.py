@@ -118,7 +118,13 @@ class SetupWizard(tk.Toplevel):
         self.title("博麗神社 · 结界契约")
         self.configure(bg=self.bg)
         self.resizable(False, False)
-        self.transient(app.root)
+        # 首次安装时主窗口会先隐藏，此时不能做 transient 子窗口，
+        # 否则部分 Windows / 远程桌面会把契约窗口一起藏掉。
+        try:
+            if str(app.root.state()) != "withdrawn":
+                self.transient(app.root)
+        except Exception:
+            pass
         sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
         # 用 Windows 工作区（排除任务栏）而不是整块屏幕，避免在小屏/缩放的 VM 上
         # 窗口底部被任务栏裁掉，看起来像“契约页只显示了一部分”。
@@ -144,6 +150,7 @@ class SetupWizard(tk.Toplevel):
         self.geometry(f"{w}x{h}+{x}+{y}")
         try:
             self.attributes("-topmost", True)
+            self.grab_set()
         except Exception:
             pass
         self.protocol("WM_DELETE_WINDOW", self._cancel)
