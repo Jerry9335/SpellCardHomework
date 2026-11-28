@@ -1594,19 +1594,24 @@ class App:
             self, self._on_onboarding_done, start_step=start_step,
             on_progress=self._on_onboarding_progress)
 
-    def _apply_install_anchor(self) -> None:
-        """识别卸载后重装：保留 API/模型，但把首启/引导状态重置。"""
+    def _apply_onboarding_request(self) -> None:
+        """消费安装器的一次性新装/重装请求。
+
+        升级不能靠安装目录 ctime 猜：Inno 覆盖安装也可能刷新目录时间。
+        只有安装器确认“旧 exe 不存在”时才会写 onboarding_request.json；
+        消费后立刻删掉，保证只重走一次契约/引路。
+        """
         try:
-            if first_run.reinstall_detected(
-                    self.cfg, settings.CONFIG_PATH, HERE):
+            requested = first_run.consume_onboarding_request()
+            if requested:
                 first_run.reset_for_reinstall(self.cfg)
-                _boot_log(
-                    f"reinstall detected install_anchor={first_run.install_anchor(HERE)!r} "
-                    f"old={self.cfg.get('install_anchor')!r}")
-            first_run.mark_install_anchor(self.cfg, HERE)
-            settings.save(self.cfg)
+                _boot_log("onboarding request consumed: fresh/reinstall")
+                settings.save(self.cfg)
+            elif first_run.clear_stale_reinstall(self.cfg):
+                _boot_log("stale onboarding_reinstall cleared on upgrade")
+                settings.save(self.cfg)
         except Exception as exc:
-            _boot_log(f"install anchor failed: {exc!r}")
+            _boot_log(f"onboarding request failed: {exc!r}")
 
     def _reveal_main_for_onboarding(self) -> None:
         if not self._first_run_hide_main:
@@ -6789,9 +6794,8 @@ def main() -> None:
                 pass
             return
 
-        # 关键：卸载重装时 %APPDATA%\SpellCardHomework\config.json 可能还在。
-        # 用安装目录创建时间识别“目录被重建”，重置首启状态，但保留 API/模型。
-        app._apply_install_anchor()
+        # 新装/重装由安装器写一次性请求，升级不重置首启状态。
+        app._apply_onboarding_request()
 
         root.protocol("WM_DELETE_WINDOW", app._on_close)
         root.deiconify()

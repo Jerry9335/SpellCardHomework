@@ -91,10 +91,11 @@ DEFAULTS: dict = {
     "onboarding_version": "",
     "onboarding_done_at": "",
     "onboarding_api_skipped": False,
+    "onboarding_tour_skipped": False,
+    "onboarding_reinstall": False,
     "onboarding_resume_step": 1,
-    # 安装目录创建时间锚点：卸载重装后目录重建，锚点变化可识别出“重装”，
-    # 即使 %APPDATA% 里的 config.json 还在，也要重新走首次契约。
-    "install_anchor": "",
+    # 更新说明已读版本；不持久化会导致每次启动都重弹。
+    "whats_new_seen_version": "",
 }
 
 
@@ -175,7 +176,7 @@ _BOOL_KEYS = frozenset({
     "web_autostart", "web_continue_on_wrong", "clipboard_on",
     "auto_browser_only", "update_enabled", "toast_enabled", "toast_update",
     "toast_trial", "toast_balance", "toast_auto", "theme_unlocked",
-    "onboarding_api_skipped",
+    "onboarding_api_skipped", "onboarding_tour_skipped", "onboarding_reinstall",
 })
 _STR_KEYS = frozenset({
     "base_url", "api_key_enc", "model", "vision_model", "vision_base_url",
@@ -183,7 +184,7 @@ _STR_KEYS = frozenset({
     "window_title", "geometry", "web_start_url", "update_channel",
     "update_repo", "update_gitee_repo", "update_last_version", "theme",
     "onboarding_state", "onboarding_version", "onboarding_done_at",
-    "install_anchor",
+    "whats_new_seen_version",
 })
 _TRUE_WORDS = frozenset({"1", "true", "yes", "on", "y", "t", "是", "真"})
 _FALSE_WORDS = frozenset({"0", "false", "no", "off", "n", "f", "否", "假", ""})

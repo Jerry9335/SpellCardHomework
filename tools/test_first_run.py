@@ -75,33 +75,44 @@ def main() -> None:
         except OSError:
             pass
 
-    # 卸载重装识别：安装目录重建后 ctime 变化；覆盖升级锚点不变。
+    # 重装必须由安装器一次性标记触发，不能再从目录 ctime 猜。
     with tempfile.TemporaryDirectory() as d:
-        install = os.path.join(d, "app")
-        os.mkdir(install)
-        cfg_path = os.path.join(d, "config.json")
-        with open(cfg_path, "w", encoding="utf-8") as f:
-            f.write("{}")
-        old = time.time() - 3600
-        os.utime(cfg_path, (old, old))
-        # 旧版本没有锚点：安装目录比 config 新 => 视为重装。
-        assert first_run.reinstall_detected({}, cfg_path, install) is True
-        anchor = first_run.install_anchor(install)
-        assert anchor
-        # 已有锚点且一致 => 普通启动/覆盖升级。
-        assert first_run.reinstall_detected({"install_anchor": anchor},
-                                            cfg_path, install) is False
-        # 锚点变化 => 重装。
-        assert first_run.reinstall_detected({"install_anchor": "1"},
-                                            cfg_path, install) is True
-        done = {"onboarding_state": "done", "onboarding_version": "1.1.7",
-                "onboarding_resume_step": 9, "onboarding_api_skipped": True,
-                "api_key": "sk-keep-me"}
-        first_run.reset_for_reinstall(done)
-        assert done["onboarding_state"] == "pending"
-        assert done["onboarding_resume_step"] == 1
-        assert done["onboarding_reinstall"] is True
-        assert done["api_key"] == "sk-keep-me"
+        old_env = os.environ.get("SHINICHI_CONFIG_DIR")
+        os.environ["SHINICHI_CONFIG_DIR"] = d
+        try:
+            marker = first_run.onboarding_request_path()
+            assert marker == os.path.join(d, "onboarding_request.json")
+            assert first_run.consume_onboarding_request() is False
+            with open(marker, "w", encoding="utf-8") as f:
+                f.write('{"reason":"fresh_or_reinstall"}')
+            assert first_run.consume_onboarding_request() is True
+            assert not os.path.exists(marker)
+            assert first_run.consume_onboarding_request() is False
+
+            # 覆盖升级：即使配置里有旧残留，也只清一次性标记，不改 done。
+            upgrade = {"onboarding_state": "done",
+                       "onboarding_reinstall": True,
+                       "onboarding_version": "1.1.7",
+                       "api_key": "sk-keep-me"}
+            assert first_run.clear_stale_reinstall(upgrade) is True
+            assert upgrade["onboarding_reinstall"] is False
+            assert upgrade["onboarding_state"] == "done"
+            assert first_run.should_show(upgrade, "licensed", True) is False
+            assert first_run.clear_stale_reinstall(upgrade) is False
+
+            done = {"onboarding_state": "done", "onboarding_version": "1.1.7",
+                    "onboarding_resume_step": 9, "onboarding_api_skipped": True,
+                    "api_key": "sk-keep-me"}
+            first_run.reset_for_reinstall(done)
+            assert done["onboarding_state"] == "pending"
+            assert done["onboarding_resume_step"] == 1
+            assert done["onboarding_reinstall"] is True
+            assert done["api_key"] == "sk-keep-me"
+        finally:
+            if old_env is None:
+                os.environ.pop("SHINICHI_CONFIG_DIR", None)
+            else:
+                os.environ["SHINICHI_CONFIG_DIR"] = old_env
     print("first_run OK")
 
 

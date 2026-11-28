@@ -72,14 +72,41 @@ Type: filesandordirs; Name: "{userappdata}\SpellCardHomework"
 Type: filesandordirs; Name: "{localappdata}\SpellCardHomework"
 
 [Code]
+var
+  PreviousExeExists: Boolean;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+begin
+  { 必须在文件复制前判断：旧目录里已有 exe = 覆盖升级，不能重置引导。 }
+  PreviousExeExists := FileExists(ExpandConstant('{app}\{#MyAppExeName}'));
+  Result := '';
+end;
+
+procedure WriteOnboardingRequest;
+var
+  DirName, FileName: String;
+begin
+  DirName := ExpandConstant('{userappdata}\SpellCardHomework');
+  ForceDirectories(DirName);
+  FileName := DirName + '\onboarding_request.json';
+  SaveStringToFile(FileName, '{"reason":"fresh_or_reinstall"}', False);
+end;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
-  if (CurStep = ssPostInstall) and WizardIsTaskSelected('resetlicense') then
+  if CurStep = ssPostInstall then
   begin
-    DeleteFile(ExpandConstant('{userappdata}\SpellCardHomework\license.json'));
-    DeleteFile(ExpandConstant('{userappdata}\SpellCardHomework\trial.json'));
-    DeleteFile(ExpandConstant('{localappdata}\SpellCardHomework\.spellcard_trial'));
-    RegDeleteKeyIncludingSubkeys(HKEY_CURRENT_USER, 'Software\Shinichi\SpellCardHomework');
+    { 旧 exe 不存在才是新装/卸载重装；覆盖升级绝不写这个标记。 }
+    if not PreviousExeExists then
+      WriteOnboardingRequest();
+
+    if WizardIsTaskSelected('resetlicense') then
+    begin
+      DeleteFile(ExpandConstant('{userappdata}\SpellCardHomework\license.json'));
+      DeleteFile(ExpandConstant('{userappdata}\SpellCardHomework\trial.json'));
+      DeleteFile(ExpandConstant('{localappdata}\SpellCardHomework\.spellcard_trial'));
+      RegDeleteKeyIncludingSubkeys(HKEY_CURRENT_USER, 'Software\Shinichi\SpellCardHomework');
+    end;
   end;
 end;
 

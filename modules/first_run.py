@@ -3,7 +3,9 @@
 这里刻意不使用“版本号是否变化”来判断是否重弹：
 - 全新安装：授权状态为 fresh 且激活前没有 config.json；
 - 老用户：已有配置，或激活前不是 fresh；
-- 中途关闭：onboarding_state 为 pending / in_progress，下次从断点继续；
+- 升级：不重弹，保留 done / legacy / pending；
+- 卸载重装：只认安装器写的一次性 onboarding_request.json；
+- 中途关闭：onboarding_state 为 pending / in_progress，下次不自动重弹；
 - 完成/跳过：done / legacy，以后升级不再自动弹出。
 """
 from __future__ import annotations
@@ -54,7 +56,7 @@ def should_show(cfg: dict, pre_access: str, config_existed: bool,
     state = str(cfg.get("onboarding_state") or "").strip().lower()
     if state == STATE_DONE:
         return False
-    # 重装由 _apply_install_anchor 写入一次性标记；消费后不会反复弹。
+    # 重装由安装器写一次性请求；消费后不会反复弹。
     if cfg.get("onboarding_reinstall"):
         return True
     # pending / in_progress 是“上次中断”，按新方案不再自动续。
@@ -101,40 +103,40 @@ def mark_legacy(cfg: dict) -> None:
     cfg["onboarding_resume_step"] = SETUP_STEPS + ONBOARD_STEPS
 
 
-def install_anchor(install_dir: str) -> str:
-    """安装目录的创建时间锚点。
+def onboarding_request_path() -> str:
+    """安装器写入的一次性“新装/重装”请求。"""
+    from modules import settings
 
-    Windows 上目录 ctime 是创建时间；Inno 卸载会删除安装目录，重装后目录
-    重建，锚点变化；普通覆盖升级不会改变这个目录的创建时间。
+    return os.path.join(settings.config_dir(), "onboarding_request.json")
+
+
+def consume_onboarding_request() -> bool:
+    """读取并删除安装器标记；只能真正消费一次。
+
+    标记存在时返回 True，调用方再 reset_for_reinstall()。
+    不读取安装目录 ctime —— 覆盖升级时 Inno 也可能重建目录，那会把升级误判成重装。
     """
-    try:
-        return str(int(os.path.getctime(install_dir)))
-    except OSError:
-        return ""
-
-
-def reinstall_detected(cfg: dict, config_path: str, install_dir: str) -> bool:
-    """判断当前启动是否是“卸载后重装”（而不是覆盖升级）。"""
-    current = install_anchor(install_dir)
-    if not current:
+    path = onboarding_request_path()
+    if not os.path.isfile(path):
         return False
-    old = str(cfg.get("install_anchor") or "").strip()
-    if old:
-        return old != current
-    # 从没有锚点的旧版本迁移：如果安装目录比 config.json 新，说明配置是上一次
-    # 安装留下的，当前目录是重装后新建的。已有老用户覆盖升级时目录更旧。
     try:
-        if not config_exists(config_path):
-            return False
-        return os.path.getctime(install_dir) > os.path.getmtime(config_path) + 2
+        os.remove(path)
     except OSError:
+        # 删不掉就宁可继续保留，下一次启动还能再处理；不要静默吞掉重装请求。
         return False
+    return True
 
 
-def mark_install_anchor(cfg: dict, install_dir: str) -> None:
-    current = install_anchor(install_dir)
-    if current:
-        cfg["install_anchor"] = current
+def clear_stale_reinstall(cfg: dict) -> bool:
+    """升级路径清理旧版本残留的 onboarding_reinstall。
+
+    只清一次性标记，不动 done / legacy / pending 状态；pending 仍按现有规则
+    不自动重弹，交给设置中心处理。
+    """
+    if cfg.get("onboarding_reinstall"):
+        cfg["onboarding_reinstall"] = False
+        return True
+    return False
 
 
 def reset_for_reinstall(cfg: dict) -> None:
