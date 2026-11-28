@@ -146,35 +146,22 @@ docs/                  screenshots and docs
 
 ## Changelog
 
+> Only versions actually published on GitHub / Gitee Releases are listed here. Unreleased builds are no longer mixed into this log.
+
 ### v1.1.7 (2026-11-28, stable)
 
-- **New/reinstalled users now see the current version's what's-new after the contract and onboarding**
-- **Reinstall clears the previous `whats_new_seen_version`**, so the current notes are not skipped
-- **Update checks**: skipped on the first launch after install/reinstall; resumes on the next launch; both new and no-new results show a Toast
-- **3-day trial** and the non-exiting activation path remain in place
+- **Auto-answer fixes**: finish every sub-question before leaving a question; stay on the current question after a failure; include the full question context from Part 2; keep the original fraction when simplification is forbidden; insert the real ∞ via the math palette; fall back to a single non-stream request when multi-stream sampling is truncated; B6-Chapter 11.1 verified at 20/20 and 100% homework score
+- **Settings center**: redesigned as “Hakurei Shrine · Boundary Settings” with six sections, Eastern names + plain subtitles, save feedback and validation
+- **Main window / ledger**: wider main window; usage ledger with filters, sorting, details, export, bar/line chart and growth animation; Aya avatar fix for the newspaper status line
+- **First install / single instance**: full-screen contract and onboarding, single-instance focus, 3-day trial; “return to the human world” no longer exits by accident
+- **What's new**: new and reinstalled users see the current release notes after the contract and onboarding; reinstall clears the old seen marker
+- **Update check**: skipped on the first launch, runs on the next launch; both new-version and no-new-version results show a Toast
+- **License and key safety**: the contract page never echoes the old API key and offers “clear saved key”; uninstall removes local config, keys, ledger and logs
 
-### v1.1.6 (2026-11-28, stable)
-
-- **Auto-answer first**: multi-part questions finish every sub-question before leaving; failed parts stay on the current Question instead of jumping ahead
-- **Context and formatting**: full multi-part givens from Part 2; keep 5/10 when the prompt says "Do not simplify"; insert the real ∞ via the math palette
-- **Settings center**: six-section full layout with plain subtitles, save feedback and validation
-- **Main window / ledger**: larger rectangular windows; usage filters, sorting, CSV, bar/line chart with growth animation
-- **First-run / single instance / what's new**: full-screen contract and onboarding, single-instance focus, full-screen version update notes
-- **Version marker**: app, installer, splash, MSIX, README and docs unified at v1.1.6
-
-### v1.0.6 (2026-11-28, stable)
-
-- **Multi-part completion**: finish every sub-question before leaving a Question; failures stay on the current question instead of jumping ahead
-- **Multi-part context**: include the whole question's givens from Part 2 onward
-- **Do not simplify**: keep the original fraction (5/10 instead of 1/2) when the prompt forbids simplification
-- **Infinity**: insert the real `∞` via the math palette instead of literal `infinity`
-- **Verified**: B6-Chapter 11.1, 20/20 questions, 20/20 points, HW Score 100%
-- **Settings center (this release)**: redesigned as "Hakurei Shrine · Boundary Settings" with left navigation and cards
-
-### v1.0.6-rc.04 (2026-11-24)
+### v1.0.6-rc.04 (2026-11-24, preview)
 
 - **Update flow**: no check on the very first install/launch; one check per later launch
-- **Notice only**: new versions open a prompt with "Go to download page", "Copy link" and "Later"; no auto download, no auto install, no auto exit
+- **Notice only**: new versions open a prompt with “Go to download page”, “Copy link” and “Later”
 - **Later means next launch**: closing the prompt does not suppress the next startup notice
 - **Simpler settings**: removed interval, auto-check toggle, snooze and download-thread controls
 - **First-run fixes**: setup is no longer hidden behind the main window; the provider list scrolls and keeps footer buttons visible
@@ -182,27 +169,17 @@ docs/                  screenshots and docs
 - **Reinstall fix**: an install-directory anchor resets the first-run flow after uninstall/reinstall while keeping API keys, models and ledger
 - **Version marker**: app, installer, splash and docs unified at v1.0.6-rc.04
 
-### v1.0.6-rc.03 (2026-11-24)
+### v1.0.6-Beta (2026-11-23, preview)
 
-- **First-run contract**: after activation, a 3-step wizard for provider, API key (test/skip), and primary/vision models
-- **Six-step onboarding**: Kaguya, Eirin, Reisen, Tewi and Kagerou introduce the main UI, capture, barrier, full-auto, ledger and settings
-- **No re-prompt for existing users**: onboarding state distinguishes first installs from upgrades; reopen any time from Settings
-- **Version marker**: app, installer, splash and docs now read v1.0.6-rc.03
-- **Fix**: after activation, a reinstall with a stale `config.json` still enters the first-run contract and onboarding
-- **Fix**: users incorrectly marked `legacy`, or never configured an API/model, are routed back through the first-run contract
-
-### v1.0.6 (2026-11-23)
-
-- **Safer full auto**: field-level UID/signature snapshots, Dojo player state, unique Check, banked skips and precise "leave unchecked" warnings
+- **Safer full auto**: field-level snapshots, Dojo player state, unique Check validation, banked skips and precise “leave unchecked” warnings
 - **Multi-candidate solving**: 3 independent samples, voting, escalation, cross-review, local substitution checks and R1 re-check
-- **Choice matching**: `B`, `B. 90%`, `Option B: ...` and exact labels; ambiguous or duplicate options are rejected instead of guessed
-- **Feedback state machine**: Good job / Incorrect / Partially correct, popup-scoped OK/Next and stale-dialog cleanup
+- **Choice matching**: `B`, `B. 90%`, exact option text; ambiguous or duplicate options are rejected instead of guessed
 - **Formula palette and matrices**: More page support, matrix/vector/piecewise insertion with verification
 - **Manual start**: no auto-start on launch; barrier and auto-answer toasts
-- **Fixes**: Incorrect counted as correct, skipped questions pulled back, false "session finished" after manual stop, submitting with too few blanks, `CHOICE B` parsing, prerelease version comparison, trial reset loophole, ledger font crash, minimised-window monitor shutdown
-- **Authors**: added 会哈气の祥; three developers in a vertical layout; all version strings and the splash updated to v1.0.6
+- **Fixes**: Incorrect counted as correct, skipped questions pulled back, false “session finished” after manual stop, submitting with too few blanks, `CHOICE B` parsing, prerelease version comparison, trial reset loophole, ledger font crash, minimised-window monitor shutdown
+- **Version marker**: this is the Beta preview of v1.0.6; the next stable release is v1.1.7
 
-### v1.0.5 (2026-11-22)
+### v1.0.5 (2026-11-22, stable)
 
 - **True translucent UI**: full-window artwork with semi-transparent panels; no large black title plate
 - **Extra download**: multi-thread installer download with 1–32 threads, pause/resume and resume support
@@ -211,20 +188,16 @@ docs/                  screenshots and docs
 - **Download-complete window** with drag-to-folder support and a directory picker fallback
 - **Version bump**: app, installer, splash and file metadata are now v1.0.5
 
-### v1.0.1 (2026-11-20)
+### v1.0.1 (2026-11-20, stable)
 
 - **Licensing upgraded** to Ed25519 asymmetric signatures; only the public key ships, so publishing the source cannot forge codes
-- **First launch** shows the activation window first, with "start 3-day trial" or an activation code
+- **First launch** shows the activation window first, with “start 5-day trial” or an activation code
 - **Boot log**: every launch writes `access=licensed/trial/fresh/expired` to `%APPDATA%\SpellCardHomework\boot.log`
 - **Second check**: access is re-verified right before the main window is shown
 - **Uninstall cleanup**: removes `license.json`, `trial.json`, the local trial backup and the registry entry (settings and API key are kept)
-- **Installer**: adds the End User License Agreement page and an optional "clear local license" task
+- **Installer**: adds the End User License Agreement page and an optional “clear local license” task
 - **UI fixes**: settings window is scrollable with a fixed footer; About / Authors dialogs size themselves to their content
-- **Identity**: the installed exe now has the "符卡作业簿" file description and the Reimu icon; splash version is v1.0.1
-
-### v1.0.0
-
-- First release: screenshot OCR, translation, AI answering, fully automatic web answering, usage ledger, balance check, one-machine-one-code licensing
+- **Identity**: the installed exe now has the “符卡作业簿” file description and the Reimu icon; splash version is v1.0.1
 
 ## FAQ
 
