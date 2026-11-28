@@ -1997,9 +1997,12 @@ class App:
         _ch = c.get("update_channel") or "auto"
         self.update_enabled_var = tk.BooleanVar(value=bool(c.get("update_enabled", True)))
         self.update_channel_var = tk.StringVar(value=self.CHANNEL_LABELS.get(_ch, self.CHANNEL_LABELS["auto"]))
-        _hrs = int(c.get("update_interval_hours") or 5)
+        _hrs = int(c.get("update_interval_hours") or 1)
+        if _hrs <= 0:
+            _hrs = 1
         self.update_interval_var = tk.StringVar(value=self.INTERVAL_LABELS.get(_hrs, "自定义"))
-        self.update_custom_var = tk.IntVar(value=_hrs if _hrs not in self.INTERVAL_LABELS else 5)
+        self.update_custom_var = tk.IntVar(value=max(1, _hrs))
+        self._update_timer_job = None
         self._update_last_check = int(c.get("update_last_check") or 0)
         self._update_snooze_until = int(c.get("update_snooze_until") or 0)
         self._update_last_version = str(c.get("update_last_version") or "")
@@ -2149,7 +2152,7 @@ class App:
         "gitee": "仅 Gitee（人间之里）",
         "github": "仅 GitHub（外界神社）",
     }
-    INTERVAL_LABELS = {0: "每次启动", 5: "5 小时", 24: "每天", 72: "每三天", 168: "每周"}
+    INTERVAL_LABELS = {1: "1 小时", 5: "5 小时", 24: "每天", 72: "每三天", 168: "每周"}
 
     def _channel_code(self) -> str:
         label = self.update_channel_var.get() if getattr(self, "update_channel_var", None) else ""
@@ -2163,14 +2166,14 @@ class App:
 
     def _interval_hours(self) -> int:
         label = (self.update_interval_var.get()
-                 if getattr(self, "update_interval_var", None) else "5 小时")
+                 if getattr(self, "update_interval_var", None) else "1 小时")
         for hours, text in self.INTERVAL_LABELS.items():
             if text == label:
                 return hours
         try:
             return max(1, min(720, int(self.update_custom_var.get())))
         except Exception:
-            return 5
+            return 1
 
     def _last_check_text(self) -> str:
         ts = int(getattr(self, "_update_last_check", 0) or 0)
@@ -2243,8 +2246,11 @@ class App:
             daemon=True,
         ).start()
 
+    def _feedback_snoozed(self) -> bool:
+        return int(getattr(self, "_update_snooze_until", 0) or 0) > time.time()
+
     def _schedule_update_check(self, first_launch: bool = False) -> None:
-        """首启跳过；之后按“自动打听 / 间隔 / 封笔”决定是否检查。"""
+        """首启跳过；之后每次启动都检查一次，间隔用于运行期间的定时检查。"""
         self._first_launch_run = bool(first_launch)
         self._suppress_update_this_run = bool(first_launch)
         if first_launch:
@@ -2255,31 +2261,47 @@ class App:
         if not self.update_enabled_var.get():
             _boot_log("update: automatic check disabled")
             return
-        try:
-            from modules import update as _up
-
-            if not _up.due(self.cfg):
-                _boot_log("update: not due (interval/snooze)")
-                return
-        except Exception:
-            pass
+        if self._feedback_snoozed():
+            _boot_log("update: startup check paused by snooze")
+            return
         self._update_startup_scheduled = True
-        # 等主界面稳定、首启窗口判定完成后再打听一次。
+        # 每次启动固定检查一次；先等主界面稳定。
         self.root.after(2500, self._update_check_startup)
 
     def _update_check_startup(self) -> None:
         if self._suppress_update_this_run or self._update_checking:
             return
-        if not self.update_enabled_var.get():
+        if not self.update_enabled_var.get() or self._feedback_snoozed():
+            return
+        self._check_updates(manual=False)
+
+    def _arm_update_timer(self) -> None:
+        """按设置的小时间隔安排运行期间的自动检查。"""
+        try:
+            if self._update_timer_job is not None:
+                self.root.after_cancel(self._update_timer_job)
+                self._update_timer_job = None
+        except Exception:
+            self._update_timer_job = None
+        if not self.update_enabled_var.get() or self._feedback_snoozed():
             return
         try:
-            from modules import update as _up
-
-            if not _up.due(self.cfg):
-                return
+            hours = max(1, int(self._interval_hours()))
+            # Tk after 的毫秒参数不能超过 32 位整数；最长按 24 天一段排。
+            hours = min(hours, 24 * 24)
+            self._update_timer_job = self.root.after(
+                hours * 3600 * 1000, self._update_timer_tick)
         except Exception:
-            pass
-        self._check_updates(manual=False)
+            self._update_timer_job = None
+
+    def _update_timer_tick(self) -> None:
+        self._update_timer_job = None
+        if not self.update_enabled_var.get() or self._feedback_snoozed():
+            return
+        if not self._update_checking:
+            self._check_updates(manual=False)
+        # 检查结果回调会重新排下一次；若正好在检查中也先把下一拍排上。
+        self._arm_update_timer()
 
     def _check_updates(self, manual: bool = False) -> None:
         if self._update_checking:
@@ -2346,6 +2368,7 @@ class App:
             )
         self._refresh_update_labels()
         self._save_config()
+        self._arm_update_timer()
 
     def _show_update_dialog(self, info: dict) -> None:
         win = tk.Toplevel(self.root)

@@ -36,8 +36,10 @@ chan = next(c for c in combos if "自动（Gitee 优先）" in c.cget("values"))
 chan.set("仅 GitHub（外界神社）")
 chan.event_generate("<<ComboboxSelected>>")
 
-assert not any(isinstance(c, ttk.Combobox) and "5 小时" in c.cget("values")
-               for c in combos), "更新间隔选项应已移除"
+assert any(isinstance(c, ttk.Combobox) and "1 小时" in c.cget("values")
+           for c in combos), "更新间隔选项应包含默认 1 小时"
+assert not any(isinstance(c, ttk.Combobox) and "每次启动" in c.cget("values")
+               for c in combos), "更新间隔不应再有每次启动选项"
 
 auto_cb = next(c for c in widgets
                if isinstance(c, ttk.Checkbutton) and c.cget("text") == "退治")

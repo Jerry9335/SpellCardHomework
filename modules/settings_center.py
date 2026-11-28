@@ -654,7 +654,8 @@ class SettingsCenter(tk.Toplevel):
                  fg=C["muted"], font=(self.F_UI, 8)).pack(side="left")
         self._button(row, "立即打听", lambda: self.app._check_updates(manual=True),
                      small=True).pack(side="left", padx=(10, 0))
-        self._add_row(g3, 4, "上次打听", "最近检查", row, "启动时只查一次，只提示不自动装")
+        self._add_row(g3, 4, "上次打听", "最近检查", row,
+                      "每次启动检查；运行期间按上面的间隔再查")
 
         thread_row = tk.Frame(g3, bg=C["panel"])
         self._spin(thread_row, self.v_update_threads, 1, 32, 1, 6).pack(side="left")
@@ -957,6 +958,10 @@ class SettingsCenter(tk.Toplevel):
             ok = a._save_config()
         except Exception:
             ok = False
+        try:
+            a._arm_update_timer()
+        except Exception:
+            pass
         if not ok:
             self._set_status("魔理沙：呜哇，卷宗没写进去——检查配置目录权限。", C["err"])
             return False

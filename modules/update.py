@@ -256,10 +256,10 @@ def due(cfg: dict, now: float | None = None) -> bool:
     if snooze and now < snooze:
         return False
     try:
-        interval = float(cfg.get("update_interval_hours") or 5)
+        interval = float(cfg.get("update_interval_hours") or 1)
         last = float(cfg.get("update_last_check") or 0)
     except Exception:
-        interval, last = 5, 0
+        interval, last = 1, 0
     if interval <= 0:
         return True
     return now - last >= interval * 3600

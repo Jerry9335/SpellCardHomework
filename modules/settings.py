@@ -67,7 +67,7 @@ DEFAULTS: dict = {
     # 更新
     "update_enabled": True,
     "update_channel": "auto",
-    "update_interval_hours": 5,
+    "update_interval_hours": 1,
     "update_last_check": 0,
     "update_snooze_until": 0,
     "update_repo": "Jerry9335/SpellCardHomework",
@@ -162,7 +162,7 @@ _FLOAT_KEYS = frozenset({
 _INT_KEYS = {
     # 键: (最小值, 最大值)；越界当成墨迹涂坏，回退默认值。
     "web_port": (1024, 65535),
-    "update_interval_hours": (0, 8760),
+    "update_interval_hours": (1, 8760),
     "update_last_check": (0, 10 ** 12),
     "update_snooze_until": (0, 10 ** 12),
     "update_max_threads": (1, 32),
