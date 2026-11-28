@@ -7,7 +7,7 @@
   <img src="https://img.shields.io/badge/windows-0078D6?logo=windows&amp;logoColor=white" alt="Windows 10 / 11" />
   <img src="https://img.shields.io/badge/Python-14354C.svg?logo=python&amp;logoColor=white" alt="Python 3.10+" />
   <img src="https://img.shields.io/badge/License-MIT-e8c46a.svg" alt="MIT License" />
-  <img src="https://img.shields.io/badge/version-1.0.6--rc.04-c8323c.svg" alt="v1.0.6-rc.04" />
+  <img src="https://img.shields.io/badge/version-1.1.7-c8323c.svg" alt="v1.1.7" />
   <img src="https://img.shields.io/badge/Touhou-Project%20Fan%20Work-c8323c.svg" alt="Touhou Project fan work" />
   <img src="https://img.shields.io/badge/QQ-EB1923?logo=tencent-qq&amp;logoColor=white" alt="QQ" />
   <img src="https://img.shields.io/badge/Gmail-D14836?logo=gmail&amp;logoColor=white" alt="Gmail" />
@@ -35,7 +35,7 @@ A small Windows desktop tool: **screenshot → OCR → translate → AI answer �
   - retries with feedback on wrong answers (up to 2)
 - 💰 **Usage ledger**: tokens, duration and estimated cost per call, 30-day chart, CSV export
 - 🔍 **Balance check**: DeepSeek account balance
-- 🔐 **One machine, one code**: Ed25519 signatures, 5-day trial on first launch
+- 🔐 **One machine, one code**: Ed25519 signatures, 3-day trial on first launch
 - 🌸 **Touhou Project fan-art UI** (AI-generated)
 - 📰 **Update notice**: checks once per launch and only shows a prompt; open the download page or copy the link, never auto-installs
 
@@ -64,7 +64,7 @@ Download from [Releases](../../releases):
 
 | File | Description |
 | --- | --- |
-| `SpellCardHomework-Setup-1.0.6-rc.04.exe` | Standard installer (Inno Setup) |
+| `SpellCardHomework-Setup-1.1.7.exe` | Standard installer (Inno Setup) |
 
 ### Option 2: Run from source
 
@@ -78,7 +78,7 @@ python app.pyw
 ## First launch & licensing
 
 1. On first launch the activation window appears
-2. Click **"先试用 5 天"** to start a 5-day trial
+2. Click **"先试用 3 天进入"** to start a 3-day trial
 3. After the trial you must activate:
    - copy the **machine code** shown in the window
    - **click either email in the window to copy it**, then email that author
@@ -146,6 +146,31 @@ docs/                  screenshots and docs
 
 ## Changelog
 
+### v1.1.7 (2026-11-28, stable)
+
+- **New/reinstalled users now see the current version's what's-new after the contract and onboarding**
+- **Reinstall clears the previous `whats_new_seen_version`**, so the current notes are not skipped
+- **Update checks**: skipped on the first launch after install/reinstall; resumes on the next launch; both new and no-new results show a Toast
+- **3-day trial** and the non-exiting activation path remain in place
+
+### v1.1.6 (2026-11-28, stable)
+
+- **Auto-answer first**: multi-part questions finish every sub-question before leaving; failed parts stay on the current Question instead of jumping ahead
+- **Context and formatting**: full multi-part givens from Part 2; keep 5/10 when the prompt says "Do not simplify"; insert the real ∞ via the math palette
+- **Settings center**: six-section full layout with plain subtitles, save feedback and validation
+- **Main window / ledger**: larger rectangular windows; usage filters, sorting, CSV, bar/line chart with growth animation
+- **First-run / single instance / what's new**: full-screen contract and onboarding, single-instance focus, full-screen version update notes
+- **Version marker**: app, installer, splash, MSIX, README and docs unified at v1.1.6
+
+### v1.0.6 (2026-11-28, stable)
+
+- **Multi-part completion**: finish every sub-question before leaving a Question; failures stay on the current question instead of jumping ahead
+- **Multi-part context**: include the whole question's givens from Part 2 onward
+- **Do not simplify**: keep the original fraction (5/10 instead of 1/2) when the prompt forbids simplification
+- **Infinity**: insert the real `∞` via the math palette instead of literal `infinity`
+- **Verified**: B6-Chapter 11.1, 20/20 questions, 20/20 points, HW Score 100%
+- **Settings center (this release)**: redesigned as "Hakurei Shrine · Boundary Settings" with left navigation and cards
+
 ### v1.0.6-rc.04 (2026-11-24)
 
 - **Update flow**: no check on the very first install/launch; one check per later launch
@@ -189,7 +214,7 @@ docs/                  screenshots and docs
 ### v1.0.1 (2026-11-20)
 
 - **Licensing upgraded** to Ed25519 asymmetric signatures; only the public key ships, so publishing the source cannot forge codes
-- **First launch** shows the activation window first, with "start 5-day trial" or an activation code
+- **First launch** shows the activation window first, with "start 3-day trial" or an activation code
 - **Boot log**: every launch writes `access=licensed/trial/fresh/expired` to `%APPDATA%\SpellCardHomework\boot.log`
 - **Second check**: access is re-verified right before the main window is shown
 - **Uninstall cleanup**: removes `license.json`, `trial.json`, the local trial backup and the registry entry (settings and API key are kept)
@@ -213,10 +238,10 @@ Remove-ItemProperty "HKCU:\Software\Shinichi\SpellCardHomework" -Name trial -Err
 ```
 
 **Q: The first launch went straight to the main window.**
-Check that About shows **v1.0.6-rc.04**, then look at the `access=` lines in `%APPDATA%\SpellCardHomework\boot.log`.
+Check that About shows **v1.1.7**, then look at the `access=` lines in `%APPDATA%\SpellCardHomework\boot.log`.
 
 **Q: The activation code is very long.**
-v1.0.6-rc.04 codes are about 130 characters — paste the whole string.
+v1.1.7 codes are about 130 characters — paste the whole string.
 
 ## License and assets
 
