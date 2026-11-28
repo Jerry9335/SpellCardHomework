@@ -292,6 +292,7 @@ class App:
         self._update_checking = False
         self._launch_time = time.time()
         self._update_offered = ""
+        self._update_download_win = None
         self._update_last_source = ""
         self._update_startup_scheduled = False
         self._suppress_update_this_run = False
@@ -2381,9 +2382,29 @@ class App:
             except Exception:
                 self._status("文文：剪贴板被结界卡住了，直接去号外页吧。", "warn")
 
-        tk.Button(row, text="前往下载页", command=open_release, bg=C["accent"], fg="white",
-                  relief="flat", bd=0, padx=16, pady=5, cursor="hand2",
-                  font=(self.F_UI, 10, "bold")).pack(side="left")
+        download_url = str(info.get("download") or "")
+        asset_name = str(info.get("asset_name") or "")
+        has_installer = bool(
+            download_url
+            and (asset_name.lower().endswith((".exe", ".msi"))
+                 or download_url.lower().split("?", 1)[0].endswith((".exe", ".msi")))
+        )
+        def open_download() -> None:
+            win.destroy()
+            self._open_update_download(info)
+
+        if has_installer:
+            tk.Button(row, text="下载安装包", command=open_download,
+                      bg=C["accent"], fg="white",
+                      relief="flat", bd=0, padx=16, pady=5, cursor="hand2",
+                      font=(self.F_UI, 10, "bold")).pack(side="left")
+            tk.Button(row, text="前往发布页", command=open_release, bg=C["panel2"],
+                      fg=C["text"], relief="flat", bd=0, padx=12, pady=5,
+                      cursor="hand2", font=(self.F_UI, 10)).pack(side="left", padx=(8, 0))
+        else:
+            tk.Button(row, text="前往发布页", command=open_release, bg=C["accent"], fg="white",
+                      relief="flat", bd=0, padx=16, pady=5, cursor="hand2",
+                      font=(self.F_UI, 10, "bold")).pack(side="left")
         tk.Button(row, text="复制链接", command=copy_link, bg=C["panel2"],
                   fg=C["text"], relief="flat", bd=0, padx=12, pady=5,
                   cursor="hand2", font=(self.F_UI, 10)).pack(side="left", padx=(8, 0))
@@ -2391,9 +2412,52 @@ class App:
                   relief="flat", bd=0, padx=14, pady=5, cursor="hand2",
                   font=(self.F_UI, 10)).pack(side="left", padx=(10, 0))
 
-        tk.Label(win, text="只提示，不自动下载、不自动安装；下载后由你亲自运行安装包。",
+        self._update_hint_var = tk.StringVar(
+            value=("下载后会自动校验 SHA256，再由更新助手安装；也可以直接去发布页。"
+                   if has_installer else
+                   "本期没有直接安装包地址，请前往发布页下载。"))
+        tk.Label(win, textvariable=self._update_hint_var,
                  bg=C["bg"], fg=C["muted"], font=(self.F_UI, 9)).pack(pady=(0, 10))
         win.protocol("WM_DELETE_WINDOW", win.destroy)
+
+    def _open_update_download(self, info: dict) -> None:
+        """号外下载窗口：多线程、断点续传、SHA256，完成后交给更新助手。"""
+        win = getattr(self, "_update_download_win", None)
+        try:
+            if win is not None and win.win.winfo_exists():
+                win.win.lift()
+                return
+        except Exception:
+            self._update_download_win = None
+        from modules import update_ui
+
+        avatar = os.path.join(ASSETS, "char", "toast", "avatar_aya.png")
+        try:
+            self._update_download_win = update_ui.start_download(
+                self.root, info, C, self.F_UI, self.F_TITLE, avatar,
+                self._install_downloaded_update)
+        except Exception as exc:
+            messagebox.showerror(APP_TITLE, f"号外取件失败：\n{exc}")
+            self._update_download_win = None
+
+    def _install_downloaded_update(self, path: str) -> None:
+        """下载并校验完成后，启动更新助手；安装器会等待本进程退出。"""
+        try:
+            if not os.path.isfile(path):
+                raise FileNotFoundError(path)
+            if not getattr(sys, "frozen", False):
+                # 源码运行时没有安装目录，直接打开安装包，避免误装 Python 目录。
+                os.startfile(path)
+                self._status("文文：安装包已经打开，按向导完成安装即可。", "ok")
+                return
+            from modules import update_install
+
+            app_dir = os.path.dirname(sys.executable)
+            update_install.start_install(path, app_dir, sys.executable)
+            self._status("文文：号外取到，准备张贴……", "ok")
+            self.root.after(300, self._on_close)
+        except Exception as exc:
+            messagebox.showerror(APP_TITLE, f"更新助手启动失败：\n{exc}")
 
     def _pick_snooze(self) -> None:
         import datetime as _dt
