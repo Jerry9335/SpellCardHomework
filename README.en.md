@@ -19,7 +19,7 @@ A small Windows desktop tool: **screenshot → OCR → translate → AI answer �
 
 [中文](./README.md) · [Build guide](./installer/README.md) · [Licensing guide](./docs/author_licensing.md)
 
-![Main window](docs/main.png)
+![Main window](docs/main.png?v=1.1.7)
 
 ## Features
 
@@ -43,11 +43,11 @@ A small Windows desktop tool: **screenshot → OCR → translate → AI answer �
 
 | Splash | Download window |
 | --- | --- |
-| ![Splash](docs/splash.png) | ![Download](docs/download_window.png) |
+| ![Splash](docs/splash.png?v=1.1.7) | ![Download](docs/download_window.png?v=1.1.7) |
 
 | Update found | Settings |
 | --- | --- |
-| ![Update](docs/update_dialog.png) | ![Settings](docs/settings.png) |
+| ![Update](docs/update_dialog.png?v=1.1.7) | ![Settings](docs/settings.png?v=1.1.7) |
 
 ## Requirements
 

@@ -19,7 +19,7 @@ Windows 桌面小工具：**截屏识题 → 英文翻译 → AI 作答 → 全�
 
 [English](./README.en.md) · [打包说明](./installer/README.md) · [发码流程](./docs/author_licensing.md)
 
-![主界面](docs/main.png)
+![主界面](docs/main.png?v=1.1.7)
 
 ## 功能
 
@@ -43,11 +43,11 @@ Windows 桌面小工具：**截屏识题 → 英文翻译 → AI 作答 → 全�
 
 | 启动画面 | 下载窗口 |
 | --- | --- |
-| ![启动](docs/splash.png) | ![号外下载](docs/download_window.png) |
+| ![启动](docs/splash.png?v=1.1.7) | ![号外下载](docs/download_window.png?v=1.1.7) |
 
 | 发现新版本 | 设置 |
 | --- | --- |
-| ![号外窗口](docs/update_dialog.png) | ![设置](docs/settings.png) |
+| ![号外窗口](docs/update_dialog.png?v=1.1.7) | ![设置](docs/settings.png?v=1.1.7) |
 
 ## 系统要求
 
