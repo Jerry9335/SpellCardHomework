@@ -6,7 +6,10 @@ import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
-os.environ["SHINICHI_CONFIG_DIR"] = tempfile.mkdtemp(prefix="sch_first_")
+sys.path.insert(0, HERE)
+from sch_testenv import enable  # noqa: E402
+
+enable(prefix="sch_first_")
 sys.path.insert(0, ROOT)
 
 import tkinter as tk
@@ -34,7 +37,7 @@ def click_trial() -> None:
             def walk(w):
                 for c in w.winfo_children():
                     try:
-                        if isinstance(c, tk.Button) and c.cget("text") == "先试用 5 天":
+                        if isinstance(c, tk.Button) and c.cget("text") == "先试用 3 天进入":
                             c.invoke()
                             state["clicked"] = True
                             return True

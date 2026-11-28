@@ -28,7 +28,8 @@ def walk(w):
 
 
 win = next(x for x in root.winfo_children()
-           if isinstance(x, tk.Toplevel) and "设置" in x.title())
+           if isinstance(x, tk.Toplevel)
+           and ("设置" in x.title() or "境界設定" in x.title()))
 widgets = list(walk(win))
 combos = [w for w in widgets if isinstance(w, ttk.Combobox)]
 chan = next(c for c in combos if "自动（Gitee 优先）" in c.cget("values"))
@@ -44,7 +45,8 @@ if auto_cb.instate(["selected"]):
     auto_cb.invoke()
 
 save_btn = next(b for b in widgets
-                if isinstance(b, ttk.Button) and b.cget("text") == "保存")
+                if isinstance(b, (ttk.Button, tk.Button))
+                and b.cget("text") in ("保存", "记入卷宗"))
 save_btn.invoke()
 for _ in range(10):
     root.update()

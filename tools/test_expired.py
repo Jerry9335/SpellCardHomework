@@ -9,14 +9,21 @@ import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
+sys.path.insert(0, HERE)
+from sch_testenv import TEST_FLAG, enable  # noqa: E402
+
+cfg = enable(prefix="sch_expired_")
 sys.path.insert(0, ROOT)
 
 from modules import capture, license as lic  # noqa: E402
 
 capture.make_dpi_aware()
-cfg = tempfile.mkdtemp(prefix="sch_expired_")
-os.makedirs(cfg, exist_ok=True)
 now = int(time.time())
+
+# 授权模块现在有「每机 seed」，先正正经经开一次试炼把 seed 生出来，
+# 再把时间往前挪成「已过期」并用 seed 重签 —— 这样才是真正的 expired，
+# 而不是签名对不上的 tampered。
+lic.start_trial()
 first = now - 6 * 86400
 last = now - 60
 data = {"first": first, "last": last, "runs": 2,
@@ -26,9 +33,12 @@ with open(os.path.join(cfg, "trial.json"), "w", encoding="utf-8") as f:
 
 env = dict(os.environ)
 env["SHINICHI_CONFIG_DIR"] = cfg
+# 这是独立测试实例；正式单实例会把它当成第二个窗口。
+env["SHINICHI_ALLOW_MULTI"] = "1"
 pyw = os.path.join(os.path.dirname(sys.executable), "pythonw.exe")
 app_path = os.path.join(ROOT, "app.pyw")
-proc = subprocess.Popen([pyw, app_path], cwd=ROOT, env=env)
+# 子进程也要自己带上门牌，否则它会去读真实的 %APPDATA% 和注册表
+proc = subprocess.Popen([pyw, app_path, TEST_FLAG], cwd=ROOT, env=env)
 time.sleep(5)
 
 wins = [w for w in capture.list_windows(include_own=True) if w.title.strip() in
@@ -50,7 +60,7 @@ print("窗口关闭后进程退出:", proc.poll() is not None)
 assert proc.poll() is not None, "关闭授权窗口后程序没有退出"
 
 # 在进程内验证：过期状态下输入正确激活码 -> 放行
-os.environ["SHINICHI_CONFIG_DIR"] = tempfile.mkdtemp(prefix="sch_act_")
+enable(prefix="sch_act_")
 import tkinter as tk
 
 import app as appmod
@@ -86,6 +96,6 @@ def fill_and_activate() -> None:
 
 
 root.after(900, fill_and_activate)
-ok = appmod.show_activation(root, "灵梦：五天试用已经结束，需要激活码。先拿一张许可来吧。")
+ok = appmod.show_activation(root, "灵梦：三天试用已经结束，需要激活码。先拿一张许可来吧。")
 print("输入激活码后窗口返回:", ok, "许可状态:", lic2.status()[0])
 root.destroy()

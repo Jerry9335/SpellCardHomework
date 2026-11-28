@@ -40,6 +40,13 @@ APP_TITLE = settings.APP_TITLE
 ASSETS = os.path.join(HERE, "assets")
 CFG_PATH = settings.CONFIG_PATH
 
+# 结界的门牌：专门记「这个调试端口是本程序亲手张开的」。
+# 紫：境界有很多扇门，不是每扇都归我管——不是自己开的就不去关，
+# 免得把别人正在用的窗户一起收进缝隙里。
+BARRIER_MARK = os.path.join(
+    os.environ.get("LOCALAPPDATA") or os.path.expanduser("~"),
+    "SpellCardHomework", "barrier.port")
+
 C = {
     "bg": "#141221",
     "panel": "#1c1830",
@@ -86,6 +93,9 @@ PLACEHOLDERS = {
 SPEAKERS = {
     "灵梦": "reimu", "魔理沙": "marisa", "慧音": "keine", "咲夜": "sakuya",
     "帕秋莉": "patchouli", "蕾米莉亚": "remilia", "芙兰": "flandre", "紫": "yukari",
+    # 文文是号外/更新提示的固定说话人；漏了 mapping 时状态栏会沿用上一位
+    # 的头像（实测曾顶着八云紫的头像播报号外）。
+    "文文": "aya", "射命丸文": "aya", "天狗": "aya",
 }
 
 QUOTES = [    "灵梦：这种作业，一张符卡就解决了吧。",
@@ -142,6 +152,49 @@ def _pick_font(root: tk.Misc, candidates: list[str], fallback: str) -> str:
     return fallback
 
 
+def _cfg_float(value, default: float) -> float:
+    """从配置里取一个浮点数。
+
+    灵梦：配置是别人塞进赛钱箱的纸条，写错字很正常。看不懂就用默认值，
+    决不能让一张糊掉的纸条把整本作业簿炸掉。
+    """
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return float(default)
+
+
+def _cfg_int(value, default: int) -> int:
+    """从配置里取一个整数，写错就退回默认值（同 `_cfg_float`）。"""
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return int(default)
+
+
+def _var_float(var, default: float) -> float:
+    """从 Tk 数值变量取数：空框/乱填一律退回默认值。
+
+    咲夜：Tk 的 DoubleVar 在空框时会直接抛 TclError，一点时间都不给。
+    这里替它兜住，别让一次手滑把整轮设置保存都吞掉。
+    """
+    try:
+        text = str(var.get()).strip()
+    except Exception:
+        return float(default)
+    if not text:
+        return float(default)
+    try:
+        return float(text)
+    except (TypeError, ValueError):
+        return float(default)
+
+
+def _var_int(var, default: int) -> int:
+    """从 Tk 数值变量取整数（同 `_var_float`）。"""
+    return int(_var_float(var, float(default)))
+
+
 class App:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
@@ -181,6 +234,9 @@ class App:
         self._settings_win: tk.Toplevel | None = None
         self._setup_win = None
         self._onboarding_win = None
+        self._whats_new_win = None
+        self._manual_whats_new = False
+        self._pending_whats_new = False
         self._first_run_hide_main = False
         self._manual_onboarding = False
         self._onboarding_pre_access = ""
@@ -227,6 +283,11 @@ class App:
         self.web_thread: threading.Thread | None = None
         self.messages: list[dict] = []
         self._streams: dict[tuple, latex.MathStream] = {}
+        # 答案正文的「誊清」缓冲：流式走纯文本，落笔后再换成带公式图的版本
+        self._ans_body = ""
+        self._ans_body_start = "1.0"
+        self._ans_photos: list = []
+        self._ans_rendered_for = ""
         self.clip_watcher: clipboard.ClipboardWatcher | None = None
         self._update_checking = False
         self._launch_time = time.time()
@@ -237,6 +298,8 @@ class App:
         self._first_launch_run = False
         self._web_user_stop = True
         self._web_round_failed = False
+        self._web_stale: dict[str, int] = {}
+        self._web_last_fills: list[tuple] = []
 
         self._resolve_fonts()
         self._load_avatars()
@@ -368,11 +431,32 @@ class App:
         r = self.root
         r.title(APP_TITLE)
         r.configure(bg=C["bg"])
-        r.minsize(1020, 660)
-
-        w, h = 1380, 880
+        # 主窗口改成更宽的长方形；小屏仍按实际屏幕夹住，不许把状态栏顶出屏幕。
         sw, sh = r.winfo_screenwidth(), r.winfo_screenheight()
-        r.geometry(f"{w}x{h}+{max(0, (sw - w) // 2)}+{max(0, (sh - h) // 3)}")
+        min_w, min_h = min(1180, sw - 40), min(720, sh - 80)
+        min_w, min_h = max(760, min_w), max(540, min_h)
+        r.minsize(min_w, min_h)
+
+        # 上次关窗时的几何位置要接着用；但必须夹在本机屏幕里。
+        # 旧 1380×880 / 1520×940 对现在的界面偏小：低于 1650×980 的保存
+        # 尺寸自动迁移到新默认 1660×987；真正拉大过的尺寸继续保留。
+        # （灵梦：上次你把我这扇窗户摆到哪了，我记着呢——但不会摆到屏幕外面去。）
+        def_w, def_h = 1660, 987
+        w = max(min_w, min(def_w, sw - 40))
+        h = max(min_h, min(def_h, sh - 80))
+        x, y = max(0, (sw - w) // 2), max(0, (sh - h) // 3)
+        geom = str(self.cfg.get("geometry") or "").strip()
+        if geom:
+            m = re.match(r"^(\d+)x(\d+)([+-]\d+)([+-]\d+)$", geom)
+            if m:
+                sw_w, sw_h = int(m.group(1)), int(m.group(2))
+                # 旧默认/偏小尺寸迁移；真正的大窗口保留
+                if sw_w >= 1650 and sw_h >= 980:
+                    w = max(min_w, min(sw_w, sw - 40))
+                    h = max(min_h, min(sw_h, sh - 80))
+                x = max(0, min(int(m.group(3)), max(0, sw - w)))
+                y = max(0, min(int(m.group(4)), max(0, sh - h - 40)))
+        r.geometry(f"{w}x{h}+{x}+{y}")
 
         if self.theme == theme.THEME_NEW:
             self._build_full_bg()
@@ -1137,24 +1221,32 @@ class App:
         f = tk.Frame(parent, bg=C["panel"], highlightbackground=C["border"], highlightthickness=1)
         hdr = tk.Frame(f, bg=C["panel"])
         hdr.pack(fill="x")
+        hdr.columnconfigure(1, weight=1)
         avatar_key = {"src": "marisa", "trans": "keine", "ans": "reimu"}.get(key)
         avatar = self._avatars.get(avatar_key) if avatar_key else None
         if avatar is not None:
-            tk.Label(hdr, image=avatar, bg=C["panel"], bd=0).pack(side="left", padx=(10, 4), pady=4)
+            tk.Label(hdr, image=avatar, bg=C["panel"], bd=0).grid(
+                row=0, column=0, padx=(10, 4), pady=4, sticky="w")
+        # grid：标题占中间可伸缩列，右侧按钮固定成独立列。
+        # 这样“慧音的翻译”的“译”不会被“誊抄”压住。
         tk.Label(hdr, text=title, bg=C["panel"], fg=C["gold"], anchor="w",
-                 font=(self.F_TITLE, 17)).pack(side="left", padx=(8, 8), pady=(8, 6))
+                 justify="left", font=(self.F_TITLE, 15)).grid(
+            row=0, column=1, sticky="ew", padx=(6, 6), pady=(8, 6))
         tipmap = {"抹去": "清空这个面板的内容", "誊抄": "复制面板内容到剪贴板"}
+        btns = tk.Frame(hdr, bg=C["panel"])
+        btns.grid(row=0, column=2, sticky="e", padx=(0, 6), pady=(8, 6))
         for text, cmd in buttons:
-            _b = tk.Button(hdr, text=text, command=cmd, bg=C["panel"], fg=C["muted"],
+            _b = tk.Button(btns, text=text, command=cmd, bg=C["panel"], fg=C["muted"],
                            activebackground=C["panel2"], activeforeground=C["text"],
                            relief="flat", bd=0, padx=8, pady=2, cursor="hand2",
                            font=(self.F_UI, 10))
-            _b.pack(side="right", padx=(0, 6), pady=(8, 6))
+            _b.pack(side="right", padx=(0, 6))
             if text in tipmap:
                 Tooltip(_b, tipmap[text])
         if hint:
             tk.Label(hdr, text=hint, bg=C["panel"], fg=C["muted"],
-                     font=(self.F_UI, 10)).pack(side="left", pady=(10, 2))
+                     font=(self.F_UI, 10)).grid(
+                row=1, column=1, columnspan=2, sticky="w", pady=(0, 4))
 
         if key == "ans":
             follow = tk.Frame(f, bg=C["panel"])
@@ -1279,122 +1371,18 @@ class App:
             pass
 
     def _open_usage(self) -> None:
-        from modules import usage as _usage
-
-        win = tk.Toplevel(self.root)
-        win.title("博麗神社 · 香火钱账本")
-        win.configure(bg=C["bg"])
-        win.transient(self.root)
-        win.geometry(f"960x860+{self.root.winfo_rootx() + 30}+{self.root.winfo_rooty() + 10}")
-
-        tk.Label(win, text="博麗神社 · 香火钱账本", bg=C["bg"], fg=C["gold"],
-                 font=(self.F_UI, 18, "bold")).pack(pady=(14, 0))
-        tk.Label(win, text="～ 用掉多少灵力，账上都有数 ～", bg=C["bg"], fg=C["muted"],
-                 font=(self.F_JP, 10)).pack(pady=(0, 8))
-
-        data = _usage.summary()
-
-        cards = tk.Frame(win, bg=C["bg"])
-        cards.pack(fill="x", padx=18)
-
-        def card(title: str, value: str, note: str) -> None:
-            f = tk.Frame(cards, bg=C["panel"], highlightbackground=C["border"],
-                         highlightthickness=1)
-            f.pack(side="left", expand=True, fill="x", padx=(0, 8))
-            tk.Label(f, text=title, bg=C["panel"], fg=C["muted"],
-                     font=(self.F_UI, 9)).pack(anchor="w", padx=12, pady=(8, 0))
-            tk.Label(f, text=value, bg=C["panel"], fg=C["gold"],
-                     font=(self.F_MONO, 16, "bold")).pack(anchor="w", padx=12)
-            tk.Label(f, text=note, bg=C["panel"], fg=C["muted"],
-                     font=(self.F_UI, 8)).pack(anchor="w", padx=12, pady=(0, 8))
-
-        card("今日香火钱", self._fmt_cost(data["today"]["cost"]), "今天花掉多少（估算）")
-        card("累计香火钱", self._fmt_cost(data["total"]["cost"]), "总共花掉多少（估算）")
-        card("今日灵力", self._fmt_tokens(data["today"]["tokens"]), "今天的 tokens 消耗")
-        card("累计抽符", str(data["total"]["calls"]), "一共调用了几次 API")
-
-        chart = _usage.render_chart(data["by_day"])
-        photo = ImageTk.PhotoImage(chart)
-        lbl = tk.Label(win, image=photo, bg=C["bg"])
-        lbl.image = photo
-        lbl.pack(padx=18, pady=(10, 0), anchor="w")
-        tk.Label(win, text="近 30 天香火钱（每天花掉多少）", bg=C["bg"], fg=C["muted"],
-                 font=(self.F_UI, 9)).pack(anchor="w", padx=22)
-
-        body = tk.Frame(win, bg=C["bg"])
-        body.pack(fill="both", expand=True, padx=18, pady=(8, 0))
-        body.columnconfigure(0, weight=1)
-        body.columnconfigure(1, weight=1)
-        body.rowconfigure(0, weight=1)
-
-        # 左：式神（模型）统计
-        left = tk.Frame(body, bg=C["panel"], highlightbackground=C["border"],
-                        highlightthickness=1)
-        left.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
-        tk.Label(left, text="式神账目（每个模型的消耗）", bg=C["panel"], fg=C["gold"],
-                 font=(self.F_UI, 10, "bold")).pack(anchor="w", padx=10, pady=(8, 4))
-        head = tk.Frame(left, bg=C["panel"])
-        head.pack(fill="x", padx=10)
-        for text, w in (("式神", 18), ("抽符", 6), ("灵力", 8), ("香火钱", 9)):
-            tk.Label(head, text=text, width=w, bg=C["panel"], fg=C["muted"],
-                     font=(self.F_UI, 8), anchor="w").pack(side="left")
-        for model, info in data["by_model"][:10]:
-            row = tk.Frame(left, bg=C["panel"])
-            row.pack(fill="x", padx=10, pady=1)
-            tk.Label(row, text=model[:18], width=18, bg=C["panel"], fg=C["text"],
-                     font=(self.F_MONO, 9), anchor="w").pack(side="left")
-            tk.Label(row, text=str(info["calls"]), width=6, bg=C["panel"], fg=C["text"],
-                     font=(self.F_MONO, 9), anchor="w").pack(side="left")
-            tk.Label(row, text=self._fmt_tokens(info["tokens"]), width=8, bg=C["panel"],
-                     fg=C["text"], font=(self.F_MONO, 9), anchor="w").pack(side="left")
-            tk.Label(row, text=self._fmt_cost(info["cost"]), width=9, bg=C["panel"],
-                     fg=C["gold"], font=(self.F_MONO, 9), anchor="w").pack(side="left")
-
-        # 右：最近的抽符记录
-        right = tk.Frame(body, bg=C["panel"], highlightbackground=C["border"],
-                         highlightthickness=1)
-        right.grid(row=0, column=1, sticky="nsew")
-        tk.Label(right, text="最近的法术记录（每次调用）", bg=C["panel"], fg=C["gold"],
-                 font=(self.F_UI, 10, "bold")).pack(anchor="w", padx=10, pady=(8, 4))
-        txt = tk.Text(right, bg=C["panel2"], fg=C["text"], relief="flat", bd=0,
-                      font=(self.F_MONO, 9), padx=8, pady=6, height=10)
-        txt.pack(fill="both", expand=True, padx=8, pady=(0, 8))
-        lines = []
-        for r in data["recent"]:
-            ts = time.strftime("%m-%d %H:%M", time.localtime(int(r.get("t", 0))))
-            lines.append(
-                f"{ts}  {str(r.get('model', ''))[:14]:<14} "
-                f"{self._fmt_tokens(r.get('tokens', 0)):>6} 灵 "
-                f"{float(r.get('sec') or 0):>5.1f}s  {self._fmt_cost(r.get('cost', 0))}"
-            )
-        txt.insert("1.0", "\n".join(lines) if lines else "（还没有记录，先去退治一题吧）")
-        txt.configure(state="disabled")
-
-        btns = tk.Frame(win, bg=C["bg"])
-        btns.pack(fill="x", padx=18, pady=10)
-
-        def do_export() -> None:
-            dest = filedialog.asksaveasfilename(
-                parent=win, title="抄录香火钱账本", defaultextension=".csv",
-                filetypes=[("CSV 账本", "*.csv")])
-            if not dest:
+        """博麗神社 · 香火钱账本：新窗口只读 usage，不碰自动答题。"""
+        win = getattr(self, "_usage_win", None)
+        try:
+            if win is not None and win.winfo_exists():
+                win.lift()
+                win.focus_force()
                 return
-            try:
-                n = _usage.export_csv(dest)
-                messagebox.showinfo("香火钱账本", f"已抄录 {n} 条记录到：\n{dest}", parent=win)
-            except Exception as e:
-                messagebox.showerror("香火钱账本", f"抄录失败：{e}", parent=win)
+        except Exception:
+            self._usage_win = None
+        from modules import usage_window
 
-        tk.Button(btns, text="抄录账本（导出 CSV）", command=do_export, bg=C["panel2"],
-                  fg=C["text"], activebackground=C["accent_dark"], activeforeground="#ffffff",
-                  relief="flat", bd=0, padx=16, pady=5, cursor="hand2",
-                  font=(self.F_UI, 10)).pack(side="left")
-        tk.Button(btns, text="关上账本", command=win.destroy, bg=C["accent"], fg="#ffffff",
-                  activebackground=C["accent_dark"], activeforeground="#ffffff",
-                  relief="flat", bd=0, padx=18, pady=5, cursor="hand2",
-                  font=(self.F_UI, 10, "bold")).pack(side="right")
-        tk.Label(win, text="灵力 = tokens；香火钱按参考单价估算，实际以平台账单为准。",
-                 bg=C["bg"], fg=C["muted"], font=(self.F_UI, 8)).pack(anchor="w", padx=22, pady=(0, 8))
+        usage_window.UsageWindow(self, C)
 
     # ------------------------------------------------------------ 首次安装/引路
     def _reload_credentials_into_ui(self) -> None:
@@ -1463,9 +1451,20 @@ class App:
     def _on_setup_done(self, result: dict) -> None:
         self._setup_win = None
         if result.get("cancelled"):
-            _boot_log("first-run setup cancelled")
+            # 契约可以稍后再续，不能把整个主程序一起关掉。
+            _boot_log("first-run setup cancelled: return to main")
+            self._reveal_main_for_onboarding()
             try:
-                self.root.destroy()
+                # 首次安装才标记“稍后续”；从设置里取消重看契约不应把老用户打回首启。
+                if getattr(self, "_first_run_hide_main", False) or first_run.is_resume(self.cfg):
+                    self.cfg["onboarding_state"] = first_run.STATE_PENDING
+                settings.save(self.cfg)
+            except Exception:
+                pass
+            try:
+                self._status("契约先留着，之后在「设置 → 结界契约」补；引路可在「神社登记」重看。", "warn")
+                self.root.deiconify()
+                self.root.lift()
             except Exception:
                 pass
             return
@@ -1496,14 +1495,18 @@ class App:
                 except Exception:
                     pass
 
-        self.root.after(180, _open_safe)
+        # 契约全屏关闭后立刻接全屏引导；不要在中间把主界面亮出来。
+        self.root.after(0, _open_safe)
 
     def _on_onboarding_done(self, skipped: bool = False) -> None:
         self._onboarding_win = None
+        self._reveal_main_for_onboarding()
         if not self._manual_onboarding:
             try:
-                first_run.mark_done(self.cfg, settings.APP_VERSION,
-                                    bool(self.cfg.get("onboarding_api_skipped")))
+                first_run.mark_done(
+                    self.cfg, settings.APP_VERSION,
+                    bool(self.cfg.get("onboarding_api_skipped")),
+                    tour_skipped=bool(skipped))
                 settings.save(self.cfg)
             except Exception:
                 pass
@@ -1514,6 +1517,56 @@ class App:
                 self._status("引路先跳过——之后随时可以在设置里重看。", "warn")
             else:
                 self._status("引路完成。结界已记住你的选择。", "ok")
+        except Exception:
+            pass
+        # 首次安装/重装：引导结束后才展示本版更新说明。
+        # 这里不直接在 on_done 回调里弹全屏，先让主界面稳定一拍。
+        if getattr(self, "_pending_whats_new", False):
+            self._pending_whats_new = False
+            try:
+                self.root.after(250, lambda: self.maybe_show_whats_new(True))
+            except Exception:
+                pass
+
+    def maybe_show_whats_new(self, config_existed: bool) -> None:
+        if self._setup_win is not None or self._onboarding_win is not None:
+            return
+        from modules import whats_new
+
+        if not whats_new.should_show(self.cfg, config_existed):
+            return
+        self.open_whats_new(manual=False)
+
+    def open_whats_new(self, manual: bool = False, start_step: int = 1) -> None:
+        if self._whats_new_win is not None and getattr(
+                self._whats_new_win, "winfo_exists", lambda: False)():
+            try:
+                self._whats_new_win.lift()
+            except Exception:
+                pass
+            return
+        from modules import whats_new
+
+        self._manual_whats_new = bool(manual)
+        self._whats_new_win = whats_new.WhatsNewWizard(
+            self, self._on_whats_new_done, start_step=start_step, manual=manual)
+
+    def _on_whats_new_done(self, skipped: bool = False, manual: bool = False) -> None:
+        self._whats_new_win = None
+        # 手动看过也算已读，避免用户刚从设置里看完、下次启动又自动弹一遍。
+        try:
+            from modules import whats_new
+
+            whats_new.mark_seen(self.cfg)
+            settings.save(self.cfg)
+        except Exception:
+            pass
+        try:
+            self._status(
+                "更新说明看完了。设置 → 神社登记 → 更新说明，随时可以重看。"
+                if not skipped else
+                "更新说明先跳过；设置 → 神社登记 → 更新说明，随时可以重看。",
+                "info")
         except Exception:
             pass
 
@@ -1581,6 +1634,8 @@ class App:
                     pass
             return
         try:
+            # 重装标记只消费一次；之后即使契约取消，也不会每次启动都重弹。
+            self.cfg["onboarding_reinstall"] = False
             first_run.mark_pending(self.cfg)
             settings.save(self.cfg)
         except Exception:
@@ -1615,465 +1670,18 @@ class App:
                 pass
 
     def _open_settings(self) -> None:
-        if self._settings_win is not None and self._settings_win.winfo_exists():
-            self._settings_win.lift()
-            return
-
-        win = tk.Toplevel(self.root)
-        self._settings_win = win
-        win.title("博麗神社 · 补习班设置")
-        win.configure(bg=C["bg"])
-        win.transient(self.root)
-        win.resizable(False, False)
-        _sh = win.winfo_screenheight()
-        _h = min(900, _sh - 150)
-        win.geometry(f"820x{_h}+{self.root.winfo_rootx() + 60}+{max(8, self.root.winfo_rooty() + 8)}")
-
-        def close_win():
-            self._dlg_model_box = None
-            self._dlg_vision_box = None
-            self._dlg_model_var = None
-            try:
-                win.destroy()
-            except Exception:
-                pass
-
-
-        # 底部按钮固定在窗口底部（不随内容滚动）
-        foot = tk.Frame(win, bg=C["bg"])
-        foot.pack(side="bottom", fill="x", padx=18, pady=10)
-
-        # 设置内容可滚动，避免小屏幕上底部按钮被裁掉
-        outer = tk.Frame(win, bg=C["bg"])
-        outer.pack(fill="both", expand=True, padx=14, pady=(10, 0))
-        canvas = tk.Canvas(outer, bg=C["bg"], highlightthickness=0, bd=0)
-        vsb = ttk.Scrollbar(outer, orient="vertical", command=canvas.yview,
-                            style="Dark.Vertical.TScrollbar")
-        canvas.configure(yscrollcommand=vsb.set)
-        canvas.pack(side="left", fill="both", expand=True)
-        vsb.pack(side="right", fill="y")
-        wrap = tk.Frame(canvas, bg=C["bg"], padx=4, pady=4)
-        _wrap_id = canvas.create_window((0, 0), window=wrap, anchor="nw")
-
-        def _sync_scroll(_e=None) -> None:
-            canvas.configure(scrollregion=canvas.bbox("all"))
-
-        def _sync_width(e) -> None:
-            canvas.itemconfigure(_wrap_id, width=e.width)
-
-        wrap.bind("<Configure>", _sync_scroll)
-        canvas.bind("<Configure>", _sync_width)
-
-        def _on_wheel(e) -> None:
-            canvas.yview_scroll(int(-e.delta / 120), "units")
-
-        win.bind("<MouseWheel>", _on_wheel)
-
-        def section(title: str) -> tk.Frame:
-            box = tk.Frame(wrap, bg=C["bg"])
-            box.pack(fill="x", pady=(0, 12))
-            tk.Label(box, text=f"❀ {title}", bg=C["bg"], fg=C["gold"],
-                     font=(self.F_TITLE, 14), anchor="w").pack(fill="x", pady=(0, 6))
-            grid = tk.Frame(box, bg=C["bg"])
-            grid.pack(fill="x")
-            grid.columnconfigure(1, weight=1)
-            return grid
-
-        def add_row(grid: tk.Frame, row: int, label: str, widget, hint: str = "") -> None:
-            tk.Label(grid, text=label, bg=C["bg"], fg=C["muted"], anchor="e", width=10,
-                     font=(self.F_UI, 10)).grid(row=row, column=0, sticky="e", padx=(0, 10), pady=4)
-            widget.grid(row=row, column=1, sticky="ew", pady=3)
-            if hint:
-                tk.Label(grid, text=hint, bg=C["bg"], fg=C["muted"],
-                         font=(self.F_UI, 9)).grid(row=row, column=2, sticky="w", padx=(8, 0))
-
-        # --- 主题 ---
-        g_theme = section("主题")
-        unlocked = bool(self.cfg.get("theme_unlocked"))
-        theme_var = tk.StringVar(value=self.cfg.get("theme", theme.THEME_CLASSIC))
-        trow = tk.Frame(g_theme, bg=C["bg"])
-        trow.grid(row=0, column=0, columnspan=3, sticky="w", pady=2)
-        tk.Radiobutton(
-            trow, text="经典", variable=theme_var, value=theme.THEME_CLASSIC,
-            bg=C["bg"], fg=C["text"], selectcolor=C["panel2"],
-            activebackground=C["bg"], activeforeground=C["gold"],
-            font=(self.F_UI, 10), cursor="hand2",
-        ).pack(side="left", padx=(0, 20))
-        rb_new = tk.Radiobutton(
-            trow, text="新主题「晨午宵绘卷」" + ("" if unlocked else "  🔒"),
-            variable=theme_var, value=theme.THEME_NEW,
-            bg=C["bg"], fg=C["text"], selectcolor=C["panel2"],
-            activebackground=C["bg"], activeforeground=C["gold"],
-            font=(self.F_UI, 10), cursor="hand2",
-        )
-        rb_new.pack(side="left")
-        if not unlocked:
-            rb_new.configure(state="disabled")
-            theme_var.set(theme.THEME_CLASSIC)
-        tk.Label(
-            g_theme, text="新主题随时段切换主界面与启动画面；解锁后可在经典/晨午宵绘卷之间切换。",
-            bg=C["bg"], fg=C["muted"], font=(self.F_UI, 9),
-        ).grid(row=1, column=0, columnspan=3, sticky="w", pady=(2, 4))
-
-        # --- 接口 ---
-        g1 = section("灵梦的通信术式（接口）")
-        provider_var = tk.StringVar()
-        base_var = tk.StringVar(value=self.base_var.get())
-        key_var = tk.StringVar(value=self.key_var.get())
-        self._dlg_key_var = key_var
-        self._dlg_base_var = base_var
-        model_var = tk.StringVar(value=self.model_var.get())
-        vision_var = tk.StringVar(value=self.vision_var.get())
-        effort_var = tk.StringVar(value=self.effort_var.get())
-        ocr_var = tk.StringVar(value=self.ocr_var.get())
-        trans_var = tk.BooleanVar(value=self.trans_var.get())
-        temp_var = tk.DoubleVar(value=self.temp_var.get())
-        extra_var = tk.StringVar(value=self.extra_var.get())
-
-        prov = ttk.Combobox(g1, textvariable=provider_var, state="readonly",
-                            values=[n for n, _ in llm.PROVIDER_PRESETS], width=18)
-        add_row(g1, 0, "结界来源", prov, "模型平台：DeepSeek / OpenAI / 智谱 / 通义")
-
-        def on_provider(_ev=None):
-            for n, preset in llm.PROVIDER_PRESETS:
-                if n == provider_var.get():
-                    base_var.set(preset)
-
-        prov.bind("<<ComboboxSelected>>", on_provider)
-        for _n, _preset in llm.PROVIDER_PRESETS:
-            if base_var.get().rstrip("/") == _preset.rstrip("/"):
-                provider_var.set(_n)
-                break
-        add_row(g1, 1, "术式坐标", ttk.Entry(g1, textvariable=base_var), "Base URL：接口地址")
-
-        key_row = tk.Frame(g1, bg=C["bg"])
-        key_entry = ttk.Entry(key_row, textvariable=key_var, show="•")
-        key_entry.pack(side="left", fill="x", expand=True)
-        show_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(key_row, text="显示", variable=show_var,
-                        command=lambda: key_entry.configure(show="" if show_var.get() else "•")
-                        ).pack(side="left", padx=(8, 0))
-        add_row(g1, 2, "通行密钥", key_row, "API Key（Windows DPAPI 加密保存在本机）")
-
-        model_row = tk.Frame(g1, bg=C["bg"])
-        model_row.columnconfigure(0, weight=1)
-        model_box = ttk.Combobox(model_row, textvariable=model_var, values=list(self._models))
-        model_box.grid(row=0, column=0, sticky="ew")
-
-        def refresh_models():
-            base = base_var.get().strip()
-            key = key_var.get().strip()
-
-            def work():
-                try:
-                    models = llm.list_models(base, key)
-                except Exception as e:
-                    self.q.put(("models_error", str(e)))
-                    return
-                self.q.put(("models", models))
-
-            self._status("魔理沙：正在向平台要模型列表…", "info")
-            threading.Thread(target=work, daemon=True).start()
-
-        ttk.Button(model_row, text="刷新", command=refresh_models, width=6).grid(row=0, column=1, padx=(8, 0))
-        add_row(g1, 3, "退治式神", model_row, "答题用的模型")
-        self._dlg_model_box = model_box
-        self._dlg_model_var = model_var
-
-        vision_box = ttk.Combobox(g1, textvariable=vision_var,
-                                  values=["（使用答题模型）"] + list(self._models))
-        add_row(g1, 4, "读图式神", vision_box, "识图用的多模态模型")
-        self._dlg_vision_box = vision_box
-
-        vision_base_var = tk.StringVar(value=self.vision_base_var.get())
-        add_row(g1, 5, "读图坐标", ttk.Entry(g1, textvariable=vision_base_var), "视觉接口，留空=用主接口")
-
-        vision_key_var = tk.StringVar(value=self.vision_key_var.get())
-        vk_row = tk.Frame(g1, bg=C["bg"])
-        vk_entry = ttk.Entry(vk_row, textvariable=vision_key_var, show="•")
-        vk_entry.pack(side="left", fill="x", expand=True)
-        vk_show = tk.BooleanVar(value=False)
-        ttk.Checkbutton(vk_row, text="显示", variable=vk_show,
-                        command=lambda: vk_entry.configure(show="" if vk_show.get() else "•")
-                        ).pack(side="left", padx=(8, 0))
-        add_row(g1, 6, "读图密钥", vk_row, "视觉 Key，留空=用主 Key")
-
-        add_row(g1, 7, "灵力强度", ttk.Combobox(g1, textvariable=effort_var, state="readonly",
-                                              values=[label for label, _ in llm.EFFORT_OPTIONS]),
-                "推理强度（越高越慢、越稳）")
-        add_row(g1, 8, "读符方式", ttk.Combobox(g1, textvariable=ocr_var, state="readonly",
-                                               values=["自动", "视觉模型", "本地 OCR"]),
-                "自动 = 视觉优先，失败转本地")
-
-        row7 = tk.Frame(g1, bg=C["bg"])
-        ttk.Checkbutton(row7, text="英文题自动翻译", variable=trans_var).pack(side="left")
-        tk.Label(row7, text="温度", bg=C["bg"], fg=C["muted"], font=(self.F_UI, 10)).pack(side="left", padx=(18, 4))
-        ttk.Spinbox(row7, from_=0.0, to=1.0, increment=0.1, textvariable=temp_var, width=5).pack(side="left")
-        add_row(g1, 9, "其它术式", row7, "英文题自动翻译 / 温度")
-
-        add_row(g1, 10, "附加咒文", ttk.Entry(g1, textvariable=extra_var), "JSON，可留空")
-
-        balance_row = tk.Frame(g1, bg=C["bg"])
-        balance_var = tk.StringVar(value="点上面的按钮，翻翻钱包还剩多少")
-        balance_btn = ttk.Button(balance_row, text="查香火钱")
-        balance_btn.pack(side="left")
-        balance_lbl = tk.Label(g1, textvariable=balance_var, bg=C["bg"],
-                               fg=C["muted"], font=(self.F_UI, 9), anchor="w",
-                               justify="left", wraplength=600)
-        balance_lbl.grid(row=12, column=1, columnspan=2, sticky="ew", pady=(2, 6))
-        Tooltip(balance_btn, "查询 API 余额（DeepSeek / OpenAI / Moonshot / OpenRouter / 通用接口）")
-
-        def do_balance() -> None:
-            balance_var.set("灵梦：正在翻钱包…")
-            balance_lbl.configure(fg=C["muted"])
-            balance_btn.configure(state="disabled")
-
-            def done(text: str, ok: bool) -> None:
-                balance_var.set(text)
-                balance_lbl.configure(fg=C["ok"] if ok else C["err"])
-                try:
-                    balance_btn.configure(state="normal")
-                except Exception:
-                    pass
-
-            self._check_balance_async(key_var.get().strip(), base_var.get().strip(), done)
-
-        balance_btn.configure(command=do_balance)
-        add_row(g1, 11, "香火钱", balance_row, "API 余额（多平台）")
-
-        # --- 文文的号外 ---
-        g3 = section("文文的号外（每次启动简报）")
-
-        ch_var = tk.StringVar(value=self.update_channel_var.get())
-        add_row(g3, 0, "报信路线",
-                ttk.Combobox(g3, textvariable=ch_var, state="readonly",
-                             values=list(self.CHANNEL_LABELS.values())),
-                "Gitee 国内快，GitHub 是主仓库")
-
-        lc_row = tk.Frame(g3, bg=C["bg"])
-        self._update_last_var = tk.StringVar()
-        tk.Label(lc_row, textvariable=self._update_last_var, bg=C["bg"], fg=C["muted"],
-                 font=(self.F_UI, 9)).pack(side="left")
-        tk.Button(lc_row, text="立即打听",
-                  command=lambda: self._check_updates(manual=True),
-                  bg=C["panel2"], fg=C["text"], activebackground=C["accent_dark"],
-                  activeforeground="#ffffff", relief="flat", bd=0, padx=10, pady=1,
-                  cursor="hand2", font=(self.F_UI, 9)).pack(side="left", padx=(10, 0))
-        add_row(g3, 1, "上次打听", lc_row, "最近一次检查结果")
-
-        tip = tk.Label(g3, text="启动时会自动打听一次；发现新版本只提示，不自动下载、不自动安装。",
-                       bg=C["bg"], fg=C["muted"], font=(self.F_UI, 9))
-        add_row(g3, 2, "更新方式", tip, "首次安装首次启动不检查")
-        self._refresh_update_labels()
-
-        # --- 式神的传讯 ---
-        g4 = section("式神的传讯（Windows 通知）")
-        toast_on = tk.BooleanVar(value=self.toast_enabled_var.get())
-        add_row(g4, 0, "传讯",
-                ttk.Checkbutton(g4, text="启用式神传讯", variable=toast_on),
-                "系统通知总开关")
-
-        flags_row = tk.Frame(g4, bg=C["bg"])
-        toast_upd = tk.BooleanVar(value=self.toast_update_var.get())
-        toast_trial = tk.BooleanVar(value=self.toast_trial_var.get())
-        toast_bal = tk.BooleanVar(value=self.toast_balance_var.get())
-        toast_auto = tk.BooleanVar(value=self.toast_auto_var.get())
-        for text, var in (("号外", toast_upd), ("结界", toast_trial),
-                          ("香火钱", toast_bal), ("退治", toast_auto)):
-            ttk.Checkbutton(flags_row, text=text, variable=var).pack(
-                side="left", padx=(0, 12))
-        add_row(g4, 1, "栏目", flags_row, "号外 / 试用 / 余额 / 退治")
-
-        quiet_row = tk.Frame(g4, bg=C["bg"])
-        quiet_start = tk.IntVar(value=self.toast_quiet_start_var.get())
-        quiet_end = tk.IntVar(value=self.toast_quiet_end_var.get())
-        tk.Label(quiet_row, text="从", bg=C["bg"], fg=C["muted"],
-                 font=(self.F_UI, 9)).pack(side="left")
-        ttk.Spinbox(quiet_row, from_=0, to=23, textvariable=quiet_start,
-                    width=4).pack(side="left", padx=3)
-        tk.Label(quiet_row, text="点到", bg=C["bg"], fg=C["muted"],
-                 font=(self.F_UI, 9)).pack(side="left")
-        ttk.Spinbox(quiet_row, from_=0, to=23, textvariable=quiet_end,
-                    width=4).pack(side="left", padx=3)
-        tk.Label(quiet_row, text="点", bg=C["bg"], fg=C["muted"],
-                 font=(self.F_UI, 9)).pack(side="left")
-        add_row(g4, 2, "打盹", quiet_row, "安静时段不打扰；结界到期除外")
-
-        add_row(g4, 3, "试听",
-                ttk.Button(g4, text="让式神传一声", command=self._test_toast),
-                "弹一条测试通知")
-
-        # --- 抓取 ---
-        g2 = section("退治的结界术式（截取）")
-        method_var = tk.StringVar(value=self.method_var.get())
-        minimize_var = tk.BooleanVar(value=self.minimize_var.get())
-        interval_var = tk.DoubleVar(value=self.interval_var.get())
-        settle_var = tk.DoubleVar(value=self.settle_var.get())
-        threshold_var = tk.DoubleVar(value=self.threshold_var.get())
-
-        add_row(g2, 0, "抽符方式", ttk.Combobox(g2, textvariable=method_var, state="readonly",
-                                              values=["屏幕抓取（所见即所得）", "后台抓取（可抓被遮挡窗口）"]))
-        rowm = tk.Frame(g2, bg=C["bg"])
-        ttk.Checkbutton(rowm, text="截图时本窗口自动让位",
-                        variable=minimize_var).pack(side="left")
-        add_row(g2, 1, "结界遮蔽", rowm, "截图时本窗口自动让位")
-
-        rowauto = tk.Frame(g2, bg=C["bg"])
-        for text, var, lo, hi, inc, w in (
-            ("间隔", interval_var, 0.5, 10.0, 0.5, 4),
-            ("静置", settle_var, 0.0, 5.0, 0.2, 4),
-            ("阈值", threshold_var, 0.2, 20.0, 0.2, 4),
-        ):
-            tk.Label(rowauto, text=text, bg=C["bg"], fg=C["muted"], font=(self.F_UI, 10)).pack(side="left", padx=(0, 4))
-            ttk.Spinbox(rowauto, from_=lo, to=hi, increment=inc, textvariable=var, width=w).pack(
-                side="left", padx=(0, 14))
-        add_row(g2, 2, "自动监视", rowauto, "间隔 / 静置 / 阈值（秒 / 分数）")
-
-        clip_var = tk.BooleanVar(value=self.clip_var.get())
-        rowclip = tk.Frame(g2, bg=C["bg"])
-        ttk.Checkbutton(rowclip, text="剪贴板自动识别（Win+Shift+S）",
-                        variable=clip_var).pack(side="left")
-        add_row(g2, 3, "剪贴符纸", rowclip, "剪贴板自动识别（Win+Shift+S）")
-
-        browser_var = tk.BooleanVar(value=self.browser_only_var.get())
-        rowb = tk.Frame(g2, bg=C["bg"])
-        ttk.Checkbutton(rowb, text="自动监听只扫浏览器前台",
-                        variable=browser_var).pack(side="left")
-        add_row(g2, 4, "结界范围", rowb, "自动监听只扫浏览器前台")
-
-        web_port_var = tk.IntVar(value=int(self.web_port_var.get() or 9222))
-        roww = tk.Frame(g2, bg=C["bg"])
-        tk.Label(roww, text="调试端口", bg=C["bg"], fg=C["muted"], font=(self.F_UI, 10)).pack(side="left")
-        ttk.Spinbox(roww, from_=1024, to=65535, textvariable=web_port_var, width=8).pack(
-            side="left", padx=(6, 14))
-        add_row(g2, 5, "结界入口", roww, "调试端口；『启动答题浏览器.bat』")
-
-        cont_var = tk.BooleanVar(value=self.continue_wrong_var.get())
-        rowfull = tk.Frame(g2, bg=C["bg"])
-        ttk.Checkbutton(rowfull, text="答错也继续下一题", variable=cont_var).pack(side="left")
-        add_row(g2, 6, "退治", rowfull, "答错是否继续下一题（全自动仍需手动点「开始退治」）")
-
-
-        start_url_var = tk.StringVar(value=self.start_url_var.get())
-        url_row = tk.Frame(g2, bg=C["bg"])
-        ttk.Entry(url_row, textvariable=start_url_var).pack(side="left", fill="x", expand=True)
-        add_row(g2, 8, "入口坐标", url_row, "点「张开结界」时打开这个页面")
-
+        """博麗神社 · 境界設定：只开新设置中心，不碰自动答题段。"""
+        win = getattr(self, "_settings_win", None)
         try:
-            from modules import license as _lic
-
-            _astate, _amsg, _adays = _lic.check_access(update=False)
-            _atext = {"licensed": "已登记（永久许可）",
-                      "trial": (f"试用中（还剩 {_adays} 天）" if _adays > 0 else "试用中（最后几小时）"),
-                      "fresh": "未登记（可试用 5 天）",
-                      "expired": "试用已结束，需要许可",
-                      "tampered": "授权记录异常，需要重新登记"}.get(_astate, _amsg)
-            _acolor = C["ok"] if _astate == "licensed" else (
-                C["warn"] if _astate == "trial" else C["err"])
+            if win is not None and win.winfo_exists():
+                win.lift()
+                win.focus_force()
+                return
         except Exception:
-            _atext, _acolor = "授权检查失败", C["err"]
+            self._settings_win = None
+        from modules import settings_center
 
-        auth_row = tk.Frame(g2, bg=C["bg"])
-        tk.Label(auth_row, text=_atext, bg=C["bg"], fg=_acolor,
-                 font=(self.F_UI, 9)).pack(side="left")
-        tk.Button(auth_row, text="查看许可", command=self._open_activation,
-                  bg=C["panel2"], fg=C["text"], activebackground=C["accent_dark"],
-                  activeforeground="#ffffff", relief="flat", bd=0,
-                  padx=10, pady=1, cursor="hand2",
-                  font=(self.F_UI, 9)).pack(side="left", padx=(10, 0))
-        add_row(g2, 9, "神社登记", auth_row, f"本机灵符 {_lic.machine_code()}")
-
-        # --- 引路与契约 ---
-        g_onboard = section("引路与契约")
-        _ostate = str(self.cfg.get("onboarding_state") or "").strip()
-        _olabel = {
-            first_run.STATE_DONE: "已看过新手引导",
-            first_run.STATE_LEGACY: "老用户升级，不自动弹出",
-            first_run.STATE_IN_PROGRESS: "契约/引路还没走完",
-            first_run.STATE_PENDING: "契约/引路还没走完",
-        }.get(_ostate, "尚未走过契约与引路")
-        tk.Label(g_onboard, text="新手引导只在首次安装出现；想再看一遍，可以随时从这里重新打开。",
-                 bg=C["bg"], fg=C["muted"], anchor="w", justify="left",
-                 font=(self.F_UI, 9)).grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 6))
-        _orow = tk.Frame(g_onboard, bg=C["bg"])
-        _orow.grid(row=1, column=0, columnspan=3, sticky="w")
-        tk.Button(_orow, text="重看新手引导", command=lambda: (
-            close_win(), self.open_onboarding(manual=True)),
-                  bg=C["gold"], fg="#241b12", activebackground="#f0d486",
-                  activeforeground="#241b12", relief="flat", bd=0,
-                  padx=14, pady=5, cursor="hand2",
-                  font=(self.F_UI, 9, "bold")).pack(side="left")
-        if _ostate in (first_run.STATE_PENDING, first_run.STATE_IN_PROGRESS):
-            tk.Button(_orow, text="继续契约", command=lambda: (
-                close_win(), self._start_first_run_resume(
-                    int(self.cfg.get("onboarding_resume_step") or 1))),
-                      bg=C["panel2"], fg=C["text"], activebackground=C["accent_dark"],
-                      activeforeground="#ffffff", relief="flat", bd=0,
-                      padx=12, pady=5, cursor="hand2",
-                      font=(self.F_UI, 9)).pack(side="left", padx=(10, 0))
-        tk.Label(_orow, text=_olabel, bg=C["bg"], fg=C["muted"],
-                 font=(self.F_UI, 9)).pack(side="left", padx=(12, 0))
-
-        # foot 已在窗口底部创建
-        foot_label = tk.Label(foot, text="通行密钥用 DPAPI 加密保存在本机（即 API Key）。",
-                              bg=C["bg"], fg=C["muted"], font=(self.F_UI, 9))
-
-        def save():
-            old_theme = self.theme
-            self.base_var.set(base_var.get().strip())
-            self.key_var.set(key_var.get().strip())
-            self.model_var.set(model_var.get().strip())
-            self.vision_var.set(vision_var.get().strip() or "（使用答题模型）")
-            self.vision_base_var.set(vision_base_var.get().strip())
-            self.vision_key_var.set(vision_key_var.get().strip())
-            self.effort_var.set(effort_var.get())
-            self.ocr_var.set(ocr_var.get())
-            self.trans_var.set(bool(trans_var.get()))
-            self.temp_var.set(float(temp_var.get() or 0.2))
-            self.extra_var.set(extra_var.get().strip())
-            self.method_var.set(method_var.get())
-            self.minimize_var.set(bool(minimize_var.get()))
-            self.interval_var.set(float(interval_var.get() or 1.5))
-            self.settle_var.set(float(settle_var.get() or 0.8))
-            self.threshold_var.set(float(threshold_var.get() or 1.5))
-            self.clip_var.set(bool(clip_var.get()))
-            self.browser_only_var.set(bool(browser_var.get()))
-            self.web_port_var.set(int(web_port_var.get() or 9222))
-            self.continue_wrong_var.set(bool(cont_var.get()))
-            self.start_url_var.set(start_url_var.get().strip() or "https://kysu.edu")
-            self.update_channel_var.set(ch_var.get())
-            self.toast_enabled_var.set(bool(toast_on.get()))
-            self.toast_update_var.set(bool(toast_upd.get()))
-            self.toast_trial_var.set(bool(toast_trial.get()))
-            self.toast_balance_var.set(bool(toast_bal.get()))
-            self.toast_auto_var.set(bool(toast_auto.get()))
-            try:
-                self.toast_quiet_start_var.set(int(quiet_start.get()))
-                self.toast_quiet_end_var.set(int(quiet_end.get()))
-            except Exception:
-                pass
-            chosen = theme_var.get()
-            if chosen == theme.THEME_NEW and not self.cfg.get("theme_unlocked"):
-                chosen = theme.THEME_CLASSIC
-            self.cfg["theme"] = chosen
-            self._save_config()
-            close_win()
-            self._status(TIPS["saved"], "ok")
-            if chosen != old_theme:
-                self._request_theme_change(chosen)
-
-        # 打开设置就自动拉一次模型列表（有地址和 key 时）
-        if base_var.get().strip() and key_var.get().strip():
-            win.after(250, refresh_models)
-
-        btn_row = tk.Frame(foot, bg=C["bg"])
-        btn_row.pack(side="right")
-        ttk.Button(btn_row, text="保存", command=save).pack(side="right", padx=(8, 0))
-        ttk.Button(btn_row, text="取消", command=close_win).pack(side="right")
-        foot_label.pack(side="left", fill="x", expand=True)
-
-        win.protocol("WM_DELETE_WINDOW", close_win)
-        win.bind("<Escape>", lambda _e: close_win())
+        settings_center.SettingsCenter(self, C)
 
     # ------------------------------------------------------------------ 关于
     def _open_url(self, url: str) -> None:
@@ -2358,7 +1966,7 @@ class App:
         ocr = c.get("ocr_mode")
         self.ocr_var = tk.StringVar(value=ocr if ocr in ("自动", "视觉模型", "本地 OCR") else "自动")
         self.trans_var = tk.BooleanVar(value=bool(c.get("translate", True)))
-        self.temp_var = tk.DoubleVar(value=float(c.get("temperature", 0.2)))
+        self.temp_var = tk.DoubleVar(value=_cfg_float(c.get("temperature"), 0.2))
         self.extra_var = tk.StringVar(value=c.get("extra_json", ""))
         _m = c.get("capture_method") or ""
         if _m.startswith("后台") or _m == "window":
@@ -2367,12 +1975,12 @@ class App:
             _m = "屏幕抓取（所见即所得）"
         self.method_var = tk.StringVar(value=_m)
         self.minimize_var = tk.BooleanVar(value=bool(c.get("minimize_on_capture", False)))
-        self.interval_var = tk.DoubleVar(value=float(c.get("auto_interval", 1.5)))
-        self.settle_var = tk.DoubleVar(value=float(c.get("auto_settle", 0.8)))
-        self.threshold_var = tk.DoubleVar(value=float(c.get("auto_threshold", 1.5)))
+        self.interval_var = tk.DoubleVar(value=_cfg_float(c.get("auto_interval"), 1.5))
+        self.settle_var = tk.DoubleVar(value=_cfg_float(c.get("auto_settle"), 0.8))
+        self.threshold_var = tk.DoubleVar(value=_cfg_float(c.get("auto_threshold"), 1.5))
         self.vision_base_var = tk.StringVar(value=c.get("vision_base_url", "") or "")
         self.vision_key_var = tk.StringVar(value=c.get("vision_api_key", "") or "")
-        self.web_port_var = tk.IntVar(value=int(c.get("web_port", 9222) or 9222))
+        self.web_port_var = tk.IntVar(value=_cfg_int(c.get("web_port"), 9222))
         self.continue_wrong_var = tk.BooleanVar(value=bool(c.get("web_continue_on_wrong", True)))
         # 全自动必须手动点「开始退治」才启动；旧配置里的 web_autostart 不再生效。
         self.autostart_var = tk.BooleanVar(value=False)
@@ -2403,13 +2011,20 @@ class App:
         self.toast_trial_var = tk.BooleanVar(value=bool(c.get("toast_trial", True)))
         self.toast_balance_var = tk.BooleanVar(value=bool(c.get("toast_balance", True)))
         self.toast_auto_var = tk.BooleanVar(value=bool(c.get("toast_auto", True)))
-        self.toast_quiet_start_var = tk.IntVar(value=int(c.get("toast_quiet_start", 23)))
-        self.toast_quiet_end_var = tk.IntVar(value=int(c.get("toast_quiet_end", 8)))
+        self.toast_quiet_start_var = tk.IntVar(value=_cfg_int(c.get("toast_quiet_start"), 23))
+        self.toast_quiet_end_var = tk.IntVar(value=_cfg_int(c.get("toast_quiet_end"), 8))
 
         reg = c.get("region")
-        if isinstance(reg, list) and len(reg) == 4:
-            self.region = tuple(int(v) for v in reg)  # type: ignore[assignment]
-        self.target_title = c.get("window_title", "") or ""
+        self.region = None
+        if isinstance(reg, (list, tuple)) and len(reg) == 4:
+            try:
+                _r = tuple(int(float(v)) for v in reg)
+                if _r[2] > 0 and _r[3] > 0:
+                    self.region = _r  # type: ignore[assignment]
+            except (TypeError, ValueError):
+                # 配置里的框选区域坏了就当没框过（P2-19：不让坏配置拖垮启动）
+                self.region = None
+        self.target_title = str(c.get("window_title") or "")
 
         self.provider_var = tk.StringVar()
         self._models: list[str] = [self.model_var.get()] if self.model_var.get() else []
@@ -2428,17 +2043,17 @@ class App:
             effort=self.effort_var.get(),
             ocr_mode=self.ocr_var.get(),
             translate=bool(self.trans_var.get()),
-            temperature=float(self.temp_var.get() or 0.2),
+            temperature=_var_float(self.temp_var, 0.2),
             extra_json=self.extra_var.get().strip(),
             capture_method=self.method_var.get(),
             region=list(self.region) if self.region else None,
             window_title=self.target_title,
             auto_enabled=bool(self.auto_var.get()),
-            auto_interval=float(self.interval_var.get() or 1.5),
-            auto_settle=float(self.settle_var.get() or 0.8),
-            auto_threshold=float(self.threshold_var.get() or 1.5),
+            auto_interval=_var_float(self.interval_var, 1.5),
+            auto_settle=_var_float(self.settle_var, 0.8),
+            auto_threshold=_var_float(self.threshold_var, 1.5),
             minimize_on_capture=bool(self.minimize_var.get()),
-            web_port=int(self.web_port_var.get() or 9222),
+            web_port=_var_int(self.web_port_var, 9222),
             web_autostart=False,
             web_start_url=self.start_url_var.get().strip(),
             web_continue_on_wrong=bool(self.continue_wrong_var.get()),
@@ -2456,8 +2071,8 @@ class App:
             toast_trial=bool(self.toast_trial_var.get()),
             toast_balance=bool(self.toast_balance_var.get()),
             toast_auto=bool(self.toast_auto_var.get()),
-            toast_quiet_start=int(self.toast_quiet_start_var.get()),
-            toast_quiet_end=int(self.toast_quiet_end_var.get()),
+            toast_quiet_start=_var_int(self.toast_quiet_start_var, 23),
+            toast_quiet_end=_var_int(self.toast_quiet_end_var, 8),
             toast_seen=dict(getattr(self, "_toast_seen", {}) or {}),
             theme=str(self.cfg.get("theme", theme.THEME_CLASSIC)),
             theme_unlocked=bool(self.cfg.get("theme_unlocked", False)),
@@ -2465,12 +2080,12 @@ class App:
         )
         return cfg
 
-    def _save_config(self) -> None:
+    def _save_config(self) -> bool:
         try:
             self.cfg = self._snapshot_cfg()
-            settings.save(self.cfg)
+            return bool(settings.save(self.cfg))
         except Exception:
-            pass
+            return False
 
     def _request_theme_change(self, name: str) -> None:
         if name not in (theme.THEME_CLASSIC, theme.THEME_NEW):
@@ -2682,33 +2297,32 @@ class App:
                     self._update_offered = tag
                     self._status(f"文文：新号外！{tag} 已经印出来了。", "ok")
                     self._show_update_dialog(info)
-                elif manual:
+                else:
                     self._status(f"文文：{tag} 的号外已经给你看过了，去下载吧。", "info")
 
-                if manual:
-                    if first_offer:
-                        toast_body = f"文文：新号外印好了——{tag} 上架。要现在去下载吗？"
-                    else:
-                        toast_body = f"文文：{tag} 的号外还压在文文那儿，去下载页看看吧。"
-                    self._notify("update", "博麗神社 · 号外", toast_body,
-                                 avatar="aya", force=True)
-            elif manual:
+                # 自动检查也要 Toast；手动检查保留强制提醒。
+                if first_offer:
+                    toast_body = f"文文：新号外印好了——{tag} 上架。要现在去下载吗？"
+                else:
+                    toast_body = f"文文：{tag} 的号外还压在文文那儿，去下载页看看吧。"
+                self._notify("update", "博麗神社 · 号外", toast_body,
+                             avatar="aya", force=bool(manual))
+            else:
                 self._status(f"文文：没有新号外，v{settings.APP_VERSION} 还是最新的。", "info")
                 self._notify(
                     "update", "博麗神社 · 号外",
                     f"文文：今天的号外翻遍了，v{settings.APP_VERSION} 还是最新的一期。",
-                    avatar="aya", force=True,
+                    avatar="aya", force=bool(manual),
                 )
         else:
             self._update_last_source = "没打听到"
-            if manual:
-                msg = err or "连接没有回应"
-                self._status(f"文文：路被结界挡住了……（{msg[:80]}）", "warn")
-                self._notify(
-                    "update", "博麗神社 · 号外",
-                    f"文文：路被结界挡住了……（{msg[:60]}）",
-                    avatar="aya", force=True,
-                )
+            msg = err or "连接没有回应"
+            self._status(f"文文：路被结界挡住了……（{msg[:80]}）", "warn")
+            self._notify(
+                "update", "博麗神社 · 号外",
+                f"文文：路被结界挡住了……（{msg[:60]}）",
+                avatar="aya", force=bool(manual),
+            )
         self._refresh_update_labels()
         self._save_config()
 
@@ -2813,6 +2427,11 @@ class App:
 
     def _trial_reminder(self) -> None:
         try:
+            # 首次契约/引导还在全屏时不要弹试用提醒，避免和仪式抢焦点。
+            if (getattr(self, "_first_run_hide_main", False)
+                    or getattr(self, "_setup_win", None) is not None
+                    or getattr(self, "_onboarding_win", None) is not None):
+                return
             from modules import license as _lic, trial_reminder as _tr
             state, _msg, days = _lic.check_access(update=False)
             rem = _tr.due(state, days, seen=getattr(self, "_toast_seen", {}))
@@ -2840,6 +2459,10 @@ class App:
         self.window_box.configure(values=labels)
         if self.window_var.get() in labels:
             return
+        # 框选模式下不拿窗口列表去覆盖选择，否则用户刚框好的区域会被显示成
+        # 「整个屏幕」，看起来像框选丢了（P2-20）。
+        if self.region:
+            return
         for w in wins:
             if w.title == self.target_title:
                 self.window_var.set(w.label())
@@ -2851,16 +2474,28 @@ class App:
 
     def _on_window_selected(self, _ev=None) -> None:
         label = self.window_var.get()
+        # P2-20：以前框选过一次之后，region 会永远压过窗口选择——
+        # 你在这儿选「整个屏幕」，我却还盯着上次那块小方框，嘴上还说「整块屏幕归我管」。
+        # 现在只要你主动改选窗口/整屏，就把那块框选收回去。
+        # （紫：框住的缝隙，你说一声我就松开。）
+        had_region = bool(self.region)
+        self.region = None
         if label == "整个屏幕":
             self.target_title = ""
             self.target_hwnd = 0
-            self._status("灵梦：好，整块屏幕都归我管。", "info")
+            if had_region:
+                self._status("灵梦：框选那块收回来了，现在整块屏幕都归我管。", "info")
+            else:
+                self._status("灵梦：好，整块屏幕都归我管。", "info")
             return
         for w in self.windows:
             if w.label() == label:
                 self.target_title = w.title
                 self.target_hwnd = w.hwnd
-                self._status(f"灵梦：就是这扇窗户吧？——{w.title[:50]}", "ok")
+                if had_region:
+                    self._status(f"灵梦：框选收回来，改盯这扇窗户——{w.title[:50]}", "ok")
+                else:
+                    self._status(f"灵梦：就是这扇窗户吧？——{w.title[:50]}", "ok")
                 return
 
     def _pick_region(self) -> None:
@@ -3263,6 +2898,8 @@ class App:
             self._web_seen = set()
             self._web_try = {}
             self._web_hint = ""
+            self._web_hint_qno = 0
+            self._web_hint_part = ()
             self._web_prev = {}
             self._web_graph_done = set()
             self._web_blocked = []
@@ -3274,20 +2911,48 @@ class App:
             self._web_continue_wrong = bool(self.continue_wrong_var.get())
             self._web_user_stop = False
             self._web_round_failed = False
+            # P2-1：这几个状态是「上一轮」的，必须跟着新一轮一起归零。
+            # 以前 _web_ledger_failed 一旦为 True 就再也没人清过——上一轮某次
+            # 磁盘写失败，会让之后每一轮都直接「停在原题等人工」，日志还骗人。
+            # （魔理沙：一页没写成账，不等于这辈子都记不了账啊。）
+            self._web_ledger_failed = False
+            self._web_model_fails = 0
+            self._web_empty_since = 0.0
+            self._web_stale = {}
+            self._web_last_fills = []
             self.web_done = ""
             if self.auto_var.get():
                 self.auto_var.set(False)
                 self._status("灵梦：全自动接管了，自动监听先关掉。", "info")
             self.web_on = True
-            self.web_stop.clear()
-            self.btn_web.configure(text="⛩  退治中…")
+            btn_txt = "⛩  退治中…"
+            self.btn_web.configure(text=btn_txt)
             port = int(self.web_port_var.get() or 9222)
             if not self._web_port_open(port):
                 self._status("紫：结界还没开——先点左边的「张开结界」（或者自己打开答题浏览器）。", "warn")
             else:
                 self._status("紫：正在从境界的缝隙里连你的浏览器…", "info")
-            self._web_gen = getattr(self, "_web_gen", 0) + 1
-            self.web_thread = threading.Thread(target=self._web_loop, daemon=True)
+            # P2-3：每一轮要有自己的世代号，并且确认上一轮真的退出了。
+            # 以前这里 web_stop.set() 之后马上 clear() 就起新线程，旧线程的
+            # 撤销被一并取消 —— 两条循环会同时读/点同一个页面，还会互相关 UI。
+            _gen = getattr(self, "_web_gen", 0) + 1
+            self._web_gen = _gen
+            _old = getattr(self, "web_thread", None)
+            if _old is not None and _old.is_alive():
+                self._web_status("紫：上一轮还在境界里收尾，先送它出来…", "info")
+                self.web_stop.set()
+                _old.join(timeout=6.0)
+                if _old.is_alive():
+                    self._web_status(
+                        "紫：旧的那轮赖着不肯走，这轮先不开——免得两条线同时动一扇窗。",
+                        "err")
+                    self.web_on = False
+                    self._web_user_stop = True
+                    self.web_var.set(False)
+                    self.btn_web.configure(text="⛩  开始退治")
+                    return
+            self.web_stop.clear()
+            self.web_thread = threading.Thread(target=self._web_loop, args=(_gen,), daemon=True)
             self.web_thread.start()
             self._status("紫：全自动已开启——等题目出现就会自动读题、作答、交卷、翻页。", "ok")
             self._notify("auto", "博麗神社 · 退治",
@@ -3313,6 +2978,9 @@ class App:
     def _watch_barrier(self) -> None:
         """轮询调试端口：手动开/关浏览器时也推送结界 Toast。"""
         try:
+            # 正在收结界的时候别插手，否则勾选框会被轮询来回拨（P2-12 配套）。
+            if getattr(self, "_barrier_closing", False):
+                return
             port = int(self.web_port_var.get() or 9222)
             open_now = self._web_port_open(port)
             last = getattr(self, "_barrier_last", None)
@@ -3357,8 +3025,14 @@ class App:
             except Exception:
                 pass
 
-    def _close_answer_browser(self, port: int) -> bool:
-        """通过 CDP Browser.close 关闭专用答题浏览器，避免误杀普通 Edge。"""
+    def _close_answer_browser(self, port: int) -> str:
+        """通过 CDP Browser.close 关闭专用答题浏览器。
+
+        返回 `"ok"`（关掉了）/ `"foreign"`（这扇门不是我开的，不动手）/
+        `"timeout"`（发了关闭请求但它没退）。
+        """
+        if not self._barrier_is_mine(port):
+            return "foreign"
         try:
             with urllib.request.urlopen(
                     f"http://127.0.0.1:{int(port)}/json/version", timeout=2.0) as r:
@@ -3376,9 +3050,14 @@ class App:
             pass
         for _ in range(12):
             if not self._web_port_open(int(port)):
-                return True
+                try:
+                    if os.path.exists(BARRIER_MARK):
+                        os.remove(BARRIER_MARK)
+                except OSError:
+                    pass
+                return "ok"
             time.sleep(0.2)
-        return False
+        return "timeout"
 
     def _toggle_browser(self) -> None:
         """☂ 张开/关闭结界：专用浏览器（带调试端口）。"""
@@ -3408,22 +3087,46 @@ class App:
             self.btn_browser.configure(text="☂  正在关闭结界")
             self._barrier_closing = True
             self._barrier_launching = False
-            ok = self._close_answer_browser(port)
-            self._barrier_closing = False
-            if ok:
-                # 不在这里改 _barrier_last：让 _watch_barrier 观察到
-                # True→False 的变化，统一只推一条“结界已关闭”。
-                was_open = bool(getattr(self, "_barrier_last", False))
-                self.browser_var.set(False)
-                self.btn_browser.configure(text="☂  张开结界")
-                self._status("紫：结界已关闭，专用答题浏览器已退出。", "info")
-                if not was_open:
-                    self._barrier_toast("紫：结界已关闭。")
-            else:
-                self.browser_var.set(True)
-                self.btn_browser.configure(text="☂  关闭结界")
-                self._status("魔理沙：结界关不掉——浏览器可能还在跑，你再试一次。", "warn")
-                self._barrier_toast("魔理沙：结界关闭失败，浏览器可能还在跑。", avatar="marisa")
+            _port = port
+
+            # P2-12：关结界要问端口、发 CDP、再等它真的退——最多五六秒。
+            # 以前这一整套都在 Tk 主线程上跑，整个界面跟着僵住；现在丢给工作
+            # 线程，结果走队列回主线程再动界面。
+            def _close_worker():
+                try:
+                    res = self._close_answer_browser(_port)
+                except Exception as exc:
+                    self.q.put(("status", f"魔理沙：关结界时出岔子——{exc}", "err"))
+                    res = "timeout"
+                self.q.put(("barrier_closed", res, _port))
+
+            threading.Thread(target=_close_worker, daemon=True).start()
+
+    def _on_barrier_closed(self, res: str, port: int) -> None:
+        """结界关闭的收尾：在主线程里改界面。"""
+        self._barrier_closing = False
+        if res == "ok":
+            # 不在这里改 _barrier_last：让 _watch_barrier 观察到
+            # True→False 的变化，统一只推一条“结界已关闭”。
+            was_open = bool(getattr(self, "_barrier_last", False))
+            self.browser_var.set(False)
+            self.btn_browser.configure(text="☂  张开结界")
+            self._status("紫：结界已关闭，专用答题浏览器已退出。", "info")
+            if not was_open:
+                self._barrier_toast("紫：结界已关闭。")
+        elif res == "foreign":
+            self.browser_var.set(True)
+            self.btn_browser.configure(text="☂  关闭结界")
+            self._status(
+                "紫：这扇结界门牌对不上——不是我张开的，我不擅自关。"
+                "你要关就自己在浏览器那边关。", "warn")
+            self._barrier_toast(
+                "紫：那扇门不是我开的，留着不动。", avatar="yukari")
+        else:
+            self.browser_var.set(True)
+            self.btn_browser.configure(text="☂  关闭结界")
+            self._status("魔理沙：结界关不掉——浏览器可能还在跑，你再试一次。", "warn")
+            self._barrier_toast("魔理沙：结界关闭失败，浏览器可能还在跑。", avatar="marisa")
 
     def _web_port_open(self, port: int) -> bool:
         try:
@@ -3432,15 +3135,42 @@ class App:
         except OSError:
             return False
 
+    def _barrier_is_mine(self, port: int) -> bool:
+        """这扇结界是不是本程序亲手张开的（P2-22）。
+
+        紫：境界里到处是门，光看「门是开的」可认不出是不是我开的。
+        门牌对不上，我就不去关它——免得把别人正在用的窗户一起收进缝隙。
+        """
+        try:
+            with open(BARRIER_MARK, "r", encoding="utf-8") as f:
+                return str(f.read()).strip() == str(int(port))
+        except (OSError, ValueError):
+            return False
+
     def _launch_answer_browser(self) -> bool:
-        """自动打开答题浏览器（就是那个 bat），返回是否发出启动。"""
+        """张开结界：调「启动答题浏览器.bat」，并记下这扇门是谁开的。
+
+        P1-5：URL 以前是当命令行参数传给 cmd 的。`list2cmdline` 只给带空格的
+        参数加引号，URL 里的 `&` 完全不受保护——bat 只会收到 `?a`，而 `b=2`
+        还会被 cmd 当成一条命令去执行。现在改走环境变量，一个字都不用过转义。
+        """
         bat = os.path.join(HERE, "启动答题浏览器.bat")
         if not os.path.exists(bat):
             return False
         try:
             url = (self.start_url_var.get() or "").strip() or "https://kysu.edu"
+            port = int(self.web_port_var.get() or 9222)
+            env = dict(os.environ)
+            env["SCH_START_URL"] = url
+            env["SCH_BARRIER_PORT"] = str(port)
+            try:
+                os.makedirs(os.path.dirname(BARRIER_MARK), exist_ok=True)
+                with open(BARRIER_MARK, "w", encoding="utf-8") as f:
+                    f.write(str(port))
+            except OSError:
+                pass
             subprocess.Popen(
-                ["cmd", "/c", bat, url], cwd=HERE,
+                ["cmd", "/c", bat], cwd=HERE, env=env,
                 creationflags=0x08000000,  # CREATE_NO_WINDOW
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             )
@@ -3465,12 +3195,19 @@ class App:
         except Exception:
             pass
 
-    def _web_loop(self) -> None:
-        """全自动主循环：连不上就等，断了就重连，一直做到没有下一题。"""
+    def _web_loop(self, gen: int = 0) -> None:
+        """全自动主循环：连不上就等，断了就重连，一直做到没有下一题。
+
+        `gen` 是本轮的世代号。收工事件必须带着**本轮**的世代号回去，
+        否则旧线程退出时会把用户刚开起来的新一轮从 UI 上关掉（P2-3）。
+        """
         drv = None
         errs = 0
         try:
             while not self.web_stop.is_set():
+                if gen and gen != getattr(self, "_web_gen", 0):
+                    # 已经有更新的一轮接手了，这一轮悄悄退场
+                    break
                 if drv is None:
                     try:
                         drv = web.WebPlayer(getattr(self, "_web_port", 9222),
@@ -3497,6 +3234,13 @@ class App:
                 except Exception as e:
                     errs += 1
                     self._web_status(f"魔理沙：全自动出错——{e}", "err")
+                    # 这一题的 key 是“提交前”就写进 _web_seen 的；一次 CDP/
+                    # 网络抖动如果直接重试，会被当成“这题处理过了”而跳过。
+                    # 异常路径主动丢掉当前 key，让下一轮重新读题、重新作答。
+                    try:
+                        self._web_seen.discard(str(getattr(self, "_web_current_key", "")))
+                    except Exception:
+                        pass
                     if drv is not None:
                         drv.ctx = None
                     if errs >= 3:
@@ -3525,7 +3269,10 @@ class App:
                 _ok = int(getattr(self, "_web_ok", 0))
                 _fail = int(getattr(self, "_web_fail", 0))
                 _blocked = [] if getattr(self, "_web_all_done", False) else list(getattr(self, "_web_blocked", []))
-                if _blocked:
+                _stopped = self.web_stop.is_set() and not getattr(self, "_web_all_done", False)
+                if _stopped:
+                    _body = "魔理沙：全自动被停止，当前这一轮没有正常收工。"
+                elif _blocked:
                     _body = (f"魔理沙：这一轮跑完了。对 {_ok} 错 {_fail}；"
                              f"第 {','.join('Q'+str(n) for n in _blocked)} 题留给人工。")
                 elif _fail or (getattr(self, "_web_round_failed", False)
@@ -3534,10 +3281,15 @@ class App:
                              "你自己看着办。")
                 else:
                     _body = f"魔理沙：这一轮退治完了。对 {_ok} 错 {_fail}，还行嘛。"
-                self._notify("auto", "博麗神社 · 退治", _body,
-                             key=f"auto:{int(time.time())}", force=True, avatar="marisa")
+                if not _stopped:
+                    self._notify("auto", "博麗神社 · 退治", _body,
+                                 key=f"auto:{int(time.time())}", force=True, avatar="marisa")
             if not getattr(self, "_web_user_stop", True):
-                if _blocked:
+                if _stopped:
+                    self._web_status(
+                        "魔理沙：全自动被停止——不是正常收工，当前题还没有完成。",
+                        "warn")
+                elif _blocked:
                     self._web_status(
                         f"魔理沙：全自动收工——对 {_ok} / 错 {_fail}；"
                         f"第 {','.join('Q'+str(n) for n in _blocked)} 题留给人工。", "ok")
@@ -3549,12 +3301,15 @@ class App:
                 else:
                     self._web_status(
                         f"灵梦：全自动收工——没有更多题了（对 {_ok} / 错 {_fail}）。", "ok")
-            self.q.put(("web_off", getattr(self, "_web_gen", 0)))
+            self.q.put(("web_off", gen if gen else getattr(self, "_web_gen", 0)))
 
     def _web_recover_blocked(self, drv) -> bool:
         """单题失败不要退出全自动：标记待人工，跳到下一道未完成题。"""
         if getattr(self, "_web_ledger_failed", False):
             self._web_status("魔理沙：跳过账本没写成，停在原题等人工，不再跳过。", "err")
+            return False
+        # 如果上一轮是被“停止”打断的，不要在这里把停止伪装成正常收工。
+        if self.web_stop.is_set():
             return False
         try:
             st = drv.state() or {}
@@ -3565,6 +3320,57 @@ class App:
             self._web_all_done = True
             return False
         qno = int(st.get("qno") or 0)
+        # 单小问/最后一小问失败时：停在当前题，**不再自动跳到下一道 Question**。
+        # 旧行为会把“求解失败/卡顿”直接记成待人工并跳题；用户重开全自动后
+        # 又因为状态是 Incorrect/Partially correct 继续跳，整题就永远丢了。
+        if not self._web_has_more_parts(st):
+            if qno:
+                try:
+                    skip_ledger.record_once(
+                        qno, st.get("part") or [], reason="自动流程未能完成，停在本题",
+                        source="pearson")
+                except Exception:
+                    self._web_ledger_failed = True
+            self._web_round_failed = True
+            self._web_status(
+                f"魔理沙：第 {qno} 题没完成，先停在本题等重试，不自动跳下一题。",
+                "warn")
+            return False
+        # 当前题还有小问：只允许翻到下一小问，绝不把整个 Question 跳掉。
+        # 本小问失败仍然入账，但后面的小问要继续做。
+        if self._web_has_more_parts(st):
+            _pv = st.get("part") or []
+            _pn, _pm = int(_pv[0]), int(_pv[1])
+            if qno:
+                try:
+                    skip_ledger.record_once(
+                        qno, _pv, reason="当前小问未能完成，继续下一小问",
+                        source="pearson")
+                except Exception as exc:
+                    self._web_ledger_failed = True
+                    self._web_round_failed = True
+                    self._web_status(
+                        f"魔理沙：小问账本写入失败（{exc}），停在这里。", "err")
+                    return False
+            self._web_status(
+                f"魔理沙：第 {qno} 题第 {_pn} 小问没完成，先翻到第 {_pn + 1} 小问，不跳题。",
+                "warn")
+            key = self._web_key(st)
+            try:
+                if self._web_next(drv, key):
+                    return True
+            except Exception:
+                pass
+            try:
+                st2 = drv.state() or {}
+                pv2 = st2.get("part") or []
+                if len(pv2) == 2 and tuple(pv2) != tuple(_pv):
+                    return True
+            except Exception:
+                pass
+            self._web_status(
+                "魔理沙：翻不到下一小问，先停在本题，不跳 Question。", "warn")
+            return False
         if qno and qno not in self._web_blocked:
             try:
                 skip_ledger.record_once(
@@ -3578,6 +3384,9 @@ class App:
                     f"魔理沙：待人工账本写入失败（{exc}），停在原题。", "err")
                 return False
             self._web_blocked.append(qno)
+            # 入账成功就把「账本坏了」的旗子放下来（P2-1）：一次写盘失败不该
+            # 让之后每一轮都被这条陈旧标志拦住。
+            self._web_ledger_failed = False
         blocked = set(self._web_blocked)
         cand = [q for q in qs if int(q["n"]) not in blocked
                 and not self._web_q_done(q)
@@ -3593,18 +3402,51 @@ class App:
         tn = int(target["n"])
         self._web_status(
             f"魔理沙：第 {qno} 题先标记待人工，跳到第 {tn} 题继续。", "warn")
-        try:
-            if drv.goto_question(tn) != "ok":
-                return False
-        except Exception:
-            return False
-        # 注意：调用本函数前当前题已经写入 skip ledger，才允许 Yes 离开。
-        self._web_leave_if_prompt(drv, allow=True)
-        time.sleep(1.1)
-        try:
-            return int((drv.state() or {}).get("qno") or 0) == tn
-        except Exception:
-            return False
+        # 走到这里，当前题已经写进 skip ledger 了，所以「离开未完成题」点 Yes 是允许的。
+        # 关键：**先把这个警告框关掉，再去点题号**。
+        # 模态框挡在页面上时，点题号根本无效，goto_question 只会返回失败，
+        # 整轮就冤死在这儿（灵梦：门被堵住了，你得先把门推开再走）。
+        for _attempt in range(3):
+            try:
+                if drv.leave_prompt():
+                    drv.click_leave("yes")
+                    time.sleep(0.8)
+            except Exception:
+                pass
+            try:
+                ok = drv.goto_question(tn) == "ok"
+            except Exception:
+                ok = False
+            if not ok:
+                time.sleep(0.5)
+                continue
+            # 有的版本是「点题号 → 才弹框」；跳完再收一次尾。
+            try:
+                if drv.leave_prompt():
+                    drv.click_leave("yes")
+                    time.sleep(0.8)
+            except Exception:
+                pass
+            time.sleep(0.9)
+            try:
+                if int((drv.state() or {}).get("qno") or 0) == tn:
+                    return True
+            except Exception:
+                pass
+        # 最后一道保险：题号跳不过去，就退用页面自己的「下一题」。
+        # （魔理沙：正门进不去，翻墙也得把你送过去。）
+        for _attempt in range(2):
+            try:
+                if drv.leave_prompt():
+                    drv.click_leave("yes")
+                    time.sleep(0.8)
+                drv.click_text(r"^(next|next question|continue)$")
+                time.sleep(1.2)
+                if int((drv.state() or {}).get("qno") or 0) != qno:
+                    return True
+            except Exception:
+                pass
+        return False
 
     def _web_key(self, st: dict) -> str:
         text = (st.get("text") or "")[:1200]
@@ -3735,6 +3577,8 @@ class App:
 
     def _web_jump_first_unfinished(self, drv, st: dict) -> bool:
         """如果前面还有没做完的题（比如 Q7 Partially correct），先回去补。"""
+        if self._web_has_more_parts(st):
+            return False
         cur = int(st.get("qno") or 0)
         first = self._web_first_unfinished(st)
         if not first or int(first["n"]) >= cur:
@@ -3761,6 +3605,11 @@ class App:
         try:
             st = st or drv.state() or {}
         except Exception:
+            return False
+        # 多小问未做完时，任何“跳下一道题”的入口都必须拒绝。
+        if self._web_has_more_parts(st):
+            self._web_status(
+                "灵梦：当前题还有小问没做完，先把小问翻完，不跳到下一题。", "info")
             return False
         qno = int(st.get("qno") or 0)
         if qno <= 0:
@@ -3891,12 +3740,15 @@ class App:
             except Exception:
                 cs = {}
             kind = str((cs or {}).get("kind") or "")
-            if kind in ("correct", "incorrect", "finished"):
+            # partial 也是「已经判过分」的一种，不能再点 Check（P1-2）
+            if kind in ("correct", "incorrect", "partial", "finished"):
                 return False
             if kind == "leave":
-                # 「确定离开本题吗」：点 No 留下，再重试 Check，绝不盲目提交/跳题
+                # 「确定离开本题吗」：点 No 留下，再重试 Check，绝不盲目提交/跳题。
+                # 用 click_leave（按 leave_state 解析出的唯一按钮 id 点），
+                # 别按文字乱点 —— dijit 的确认框里，文字和按钮根本不在同一个节点。
                 try:
-                    drv.click_text(r"^\s*no\s*$")
+                    drv.click_leave("no")
                 except Exception:
                     pass
                 time.sleep(0.9)
@@ -3934,27 +3786,48 @@ class App:
             time.sleep(0.45)
         return False
 
-    def _web_feedback(self, drv, timeout: float = 15.0) -> str:
+    def _web_feedback(self, drv, timeout: float = 15.0, base_posted=None) -> str:
+        """读判分结果，返回 correct / incorrect / partial / 空串。
+
+        帕秋莉：`resultPosted` 是个累计的 revision，上一题的残留很容易冒充本题。
+        以前只要它非 0 就直接采信——可能在真正的反馈弹出来之前，就把上一题的
+        正误当成这一题：答对记成错、答错记成对，两种都是灾难。
+        现在要么「反馈弹窗确实开着」，要么「resultPosted 相对点 Check 之前变了」。
+        """
         deadline = time.time() + timeout
         while time.time() < deadline:
+            fb = ""
+            # **判分框优先**（《作业侠客》就是这样判的：只看可见的判分框）。
+            # Dojo 内部的 resultPosted/kind 是**整题聚合值**——多小问里
+            # 前一问 partial 会让后一问答对了也被判成 partial
+            # （2026-11-28 Q14 实测：弹窗写「Fantastic!」，内部状态还是 partial）。
+            try:
+                fb = (drv.feedback() or "").strip()
+            except Exception:
+                fb = ""
+            if fb:
+                return fb
             try:
                 # Dojo player 的内部判分优先；它比 DOM 弹窗更稳定
                 ps = drv.player_state() if hasattr(drv, "player_state") else {}
                 pk = self._web_player_kind(ps)
-                if pk and (ps.get("feedbackOpen") or ps.get("resultPosted")):
-                    if pk == "correct":
-                        return "correct"
-                    if pk == "incorrect":
-                        return "incorrect"
-                    if pk == "partial":
-                        # 当前调用方只区分 correct/incorrect；partial 视为可重试
-                        return "incorrect"
+                if pk:
+                    fresh = bool(ps.get("feedbackOpen"))
+                    if not fresh and base_posted is not None:
+                        posted = ps.get("resultPosted")
+                        if posted is not None:
+                            try:
+                                fresh = int(posted or 0) != int(base_posted or 0)
+                            except (TypeError, ValueError):
+                                fresh = False
+                    if fresh:
+                        return pk
                 cs = drv.completion_state() if hasattr(drv, "completion_state") else {}
                 kind = str((cs or {}).get("kind") or "")
-                if kind in ("correct", "finished"):
+                if kind in ("correct", "partial", "incorrect"):
+                    return kind
+                if kind == "finished":
                     return "correct"
-                if kind == "incorrect":
-                    return "incorrect"
                 fb = (drv.feedback() or "").strip()
             except Exception:
                 fb = ""
@@ -3973,15 +3846,31 @@ class App:
 
         如果当前有反馈弹窗，只点弹窗内部的 Next；绝不点弹窗背后的旧 Next/Check。
         """
+        n, m = 0, 0
         try:
             st = drv.state() or {}
             pv = st.get("part") or []
             n, m = (int(pv[0]), int(pv[1])) if len(pv) == 2 else (0, 0)
-            if 0 < n < m:
-                self._web_status(f"灵梦：还有第 {n + 1} 小问（共 {m} 问），先不翻页", "info")
-                return False
         except Exception:
-            pass
+            n, m = 0, 0
+        # 还有小问没做完时，**只允许点「Continue / Continue to next part」** ——
+        # 那是同一道题里往后翻一节，不会跳过小问。
+        # 普通的「Next question」会直接跳题，必须拦住。
+        # （灵梦：一节做完了该翻到下一节，但要翻到别的题，我得先问一声。）
+        if 0 < n < m:
+            try:
+                r = drv.click_text(r"^continue( to next part)?$")
+            except Exception:
+                r = "error"
+            if r != "ok":
+                self._web_status(
+                    f"灵梦：还有第 {n + 1} 小问（共 {m} 问），没找到「继续」就先不翻页。", "info")
+                return False
+            time.sleep(0.6)
+            if self._web_wait_change(drv, old_key, timeout=10):
+                return True
+            self._web_status(f"灵梦：点了「继续」但页面没动，停在原题。", "warn")
+            return False
         try:
             cs = drv.completion_state() if hasattr(drv, "completion_state") else {}
             if cs and cs.get("kind") not in ("", "none"):
@@ -3989,16 +3878,272 @@ class App:
                     return False
                 res = drv.click_completion("next") if hasattr(drv, "click_completion") else "no"
             else:
-                res = drv.click_text(r"^next( question)?$")
+                # 「下一题」不一定叫 Next：答对之后 Pearson 常常只给一个
+                # `Continue`（多小问里是「Continue to next part」）。
+                res = drv.click_text(
+                    r"^(next( question)?|continue( to next part)?|next part)$")
             if res != "ok":
                 return False
             time.sleep(0.6)
             if drv.leave_prompt():
-                drv.click_text(r"^\s*no\s*$")
+                try:
+                    drv.click_leave("no")
+                except Exception:
+                    pass
                 return False
         except Exception:
             return False
         return self._web_wait_change(drv, old_key)
+
+    # ==================================================================
+    # 以下整段学自《作业侠客》hwai.py 的 App：
+    # `_fill_fields` / `_pending_fields` / `_report_fields` / `_ask_text`
+    # / `_verify_fix` / `_advance` / 交卷前复核。
+    # 我们原来的实现是「边踩坑边补特判」，不成体系；他这套是跑顺过的，照搬。
+    # （帕秋莉：别人的笔记已经校对过了，就别再自己推一遍。）
+    # ==================================================================
+    def _fill_math_value(self, drv, fid: str, val: str) -> None:
+        """填一个非矩阵值；无穷符号必须走调色板，不能键入 \\inf。
+
+        Pearson 把键盘输入的 ``\\inf`` 渲染成字面文本 “infinity”，Check 不认；
+        调色板的 ∞ 按钮才插入真正的符号（Q17 实测）。其他值仍走结构感知键入。
+        """
+        raw = str(val or "").strip()
+        ed = latex.to_editor_input(raw)
+        paste = latex.to_paste_input(raw)
+        _inf_tokens = {"∞", "infinity", r"\infty", r"\inf"}
+        if raw.lower() in _inf_tokens or ed.strip().lower() in _inf_tokens \
+                or paste.strip().lower() in _inf_tokens:
+            if drv.palette_infinity(fid) == "ok":
+                return
+        drv.insert_math(ed)
+
+    def _fill_fields(self, drv, fields, vals) -> str:
+        """把 vals 逐个填进 fields。成功返回 ""，失败返回一句人话。
+
+        与旧 `_web_fill` 的区别（都是他的做法）：
+        - 先 `focus_field` 再 `wait_js(/focusNode/)` 确认焦点真进去；
+        - `clear_field()` 返回 False 就停，绝不硬打字（免得 Ctrl+A 选中整页）；
+        - 只用 `insert_math(normalize_math(v))`，不粘贴、不比对值；
+        - 填完等 aria-label 不再是占位符，而不是硬等固定秒数。
+        """
+        if len(vals) != len(fields):
+            return f"页面有 {len(fields)} 个空，模型给了 {len(vals)} 个值，对不上"
+        if any(not v for v in vals):
+            missing = [str(i + 1) for i, v in enumerate(vals) if not v]
+            return "第 " + "、".join(missing) + " 个空模型没给值"
+        total = len(vals)
+        for i, (fld, val) in enumerate(zip(fields, vals), 1):
+            fid = fld["id"]
+            self._web_status(f"灵梦：落笔第 {i}/{total} 格…", "info")
+            drv.focus_field(fid)
+            drv.wait_js("document.activeElement"
+                        " && /focusNode/.test(String(document.activeElement.className || ''))", 2.0)
+            if not drv.clear_field():
+                return f"第 {i} 个空的输入框聚焦不上（不硬打字，免得把整页选起来）"
+            if isinstance(val, tuple):
+                rows, cols, mv = val
+                if len(mv) < rows * cols:
+                    return f"第 {i} 个空要 {rows * cols} 个矩阵元素，只有 {len(mv)} 个"
+                err = drv.fill_matrix(fid, rows, cols, mv)
+                if err:
+                    return f"填第 {i} 个空失败：{err}"
+            else:
+                self._fill_math_value(drv, fid, str(val))
+                drv.wait_js("((document.getElementById(%s) || {}).getAttribute && "
+                            "(document.getElementById(%s).getAttribute('aria-label') || '')"
+                            ".indexOf('enter your response') < 0) === true"
+                            % (json.dumps(fid), json.dumps(fid)), 3.0)
+        return ""
+
+    @staticmethod
+    def _pending_fields(st: dict) -> list:
+        """这页还需要填的空：跳过已填的，以及「没选中的那个选项」里的空。
+
+        **不按名字里的 Decoy 过滤**：Pearson 把「选中的那个选项里的空」也起名
+        `Decoy1`，按名字过滤会把本该填的空跳过，Check answer 一直是灰的。
+        """
+        any_checked = any(r.get("checked") for r in (st.get("radios") or []))
+        out = []
+        for f in st.get("fields") or []:
+            if f.get("filled"):
+                continue
+            if any_checked and f.get("in_opt") == "unchecked":
+                continue
+            out.append(f)
+        return out
+
+    @staticmethod
+    def _report_fields(st: dict) -> list:
+        """复核时要看的空：只算「选中的那个选项里」的和题干里的。"""
+        any_checked = any(r.get("checked") for r in (st.get("radios") or []))
+        return [f for f in st.get("fields") or []
+                if not (any_checked and f.get("in_opt") == "unchecked")]
+
+    @staticmethod
+    def _ask_text(st: dict) -> str:
+        """给式神的题目文本：**当前这一节放最前面**。
+
+        整页文本只留 4000 字，长题（Part 8/9）会把当前这节的指令截掉，
+        模型看到的全是前面几个小问，于是直接把前面的答案抄过来。
+        """
+        text = st.get("text") or ""
+        cur = (st.get("cur") or "").strip()
+        if cur and cur not in text:
+            return ("【当前这一节】\n" + cur +
+                    "\n\n【整页其余内容（可能含前面已做过的小问，别照抄它们的答案）】\n" + text)
+        return text
+
+    def _verify_fix(self, drv, why: str) -> bool:
+        """复核说「应该是 X」时，如果 X 正好是某个选项，就直接改过来。
+
+        只处理「选项选错」这一种，文本框暂不动（改字容易越改越乱）。
+        """
+        tail = why.split("应该是", 1)[-1] if "应该是" in why else why
+        tail = tail.lower()
+        try:
+            radios = drv.state()["radios"]
+        except Exception:
+            return False
+        for r in radios:
+            lab = (r.get("label") or "").strip()
+            if not lab or r.get("checked") or r.get("disabled"):
+                continue
+            if lab.lower() in tail:
+                if drv.pick_choice("X", [dict(r, letter="X")]) == "ok":
+                    self._web_status(f"魔理沙：复核说选错了，已改成「{lab}」，再交一次", "warn")
+                    return True
+        return False
+
+    def _verify_before_submit(self, drv, st: dict, ctx: dict) -> str:
+        """交卷前让式神复核已填的答案（他的 `verify_filled`）。
+
+        返回 "ok" / "fixed" / "stop:<说明>" / "skip"（没东西可复核）。
+        """
+        try:
+            from modules import prompts as _p
+        except Exception:
+            return "skip"
+        checked = [r for r in (st.get("radios") or []) if r.get("checked")]
+        fields = self._report_fields(st)
+        fills = [f for f in (st.get("fills") or st.get("dropdowns") or [])
+                 if (f.get("value") or "").strip()]
+        if not fields and not fills and not checked:
+            return "skip"
+        lines = []
+        for i, f in enumerate(fields, 1):
+            lab = (f.get("label") or "").strip()
+            if not lab:
+                continue
+            hint = (f.get("hint") or "").replace("\n", " ").strip()[:120]
+            lines.append("第%d空：%s%s" % (i, lab[:120],
+                                          ("　（所在句子：%s）" % hint) if hint else ""))
+        for i, f in enumerate(fills, 1):
+            lines.append("下拉%d：%s" % (i, (f.get("value") or "").strip()[:60]))
+        if checked:
+            lines.append("已选选项：%s" % ((checked[0].get("label") or "").strip()[:300]))
+        if not lines:
+            return "skip"
+        body = (_p.VERIFY_PROMPT + "\n\n题目：\n" + self._ask_text(st)[:4000]
+                + "\n\n当前已填：\n" + "\n".join(lines))
+        ctx = ctx or getattr(self, "_web_ctx", None) or {}
+        base = str((ctx or {}).get("base") or "")
+        key = str((ctx or {}).get("key") or "")
+        model = str((ctx or {}).get("model") or "")
+        if not (key and model):
+            return "skip"
+        try:
+            raw = self._ask_cancellable(base, key, model,
+                                        [{"role": "user", "content": body}],
+                                        ctx, timeout=90.0)
+        except Exception:
+            return "skip"
+        verdict, why = _p.parse_verify(raw)
+        if verdict == "ok":
+            self._web_status("玉：复核通过，交卷。", "ok")
+            return "ok"
+        if verdict == "wrong":
+            if self._verify_fix(drv, why):
+                return "fixed"
+            # 复核只改了选项；文字填空改不了。把复核结论当成下一轮的提示，
+            # 让模型重算并重填，而不是整题停在原地等人工。
+            try:
+                _st = drv.state() or {}
+                _qno = int(_st.get("qno") or 0)
+                _part = tuple(_st.get("part") or [])
+            except Exception:
+                _qno, _part = 0, ()
+            _vkey = ("verify", _qno, _part)
+            _vtry = self._web_try.get(_vkey, 0) + 1
+            self._web_try[_vkey] = _vtry
+            if _vtry > 2:
+                self._web_status(
+                    f"玉：复核连续 {_vtry} 次认为不对，先停，交给你看。", "warn")
+                return "stop:" + why
+            self._web_hint = ("交卷前复核认为当前填写不对：" + str(why)[:200]
+                              + "。请按这个结论重新计算，并只输出 CHOICE/MATRIX/"
+                                "DROPDOWN/VALUE 四行。")
+            self._web_hint_qno = _qno
+            self._web_hint_part = _part
+            self._web_status("玉：复核发现填得不对，带着复核结论重算一次…", "warn")
+            return "fixed"
+        self._web_status("玉：复核没拿到结论（式神没按格式回），先停，你自己看一眼再交", "warn")
+        return "stop:复核没有结论"
+
+    def _advance(self, drv, qn, before: str) -> bool:
+        """把页面推到下一题。只用页面自己的「下一题」按钮，**绝不点 Save / 左边题号 / 改 URL**。
+
+        四条路线（他的顺序）：判分框的 Next question → 播放器 btnNext
+        → 不会跳走的 inline next → 交还给人、只等页面变化。
+        """
+        # 路线一：判分框里的「Next question」——真 Pearson 新界面只有这条能走
+        if drv.click_feedback_next():
+            self._web_status("灵梦：点判分框里的「Next question」…", "info")
+            if drv.wait_advanced(qn, before, 25.0):
+                return True
+            self._web_status("魔理沙：点过了但页面没动；先停，不重复点（怕重复提交）", "warn")
+            return False
+        # 路线二：播放器标题栏自己的 btnNext
+        for _ in range(2):
+            got = drv.click_next_btn()
+            if got == "disabled":
+                break
+            if got == "ok":
+                self._web_status("灵梦：点播放器的「下一题」…", "info")
+                if drv.wait_advanced(qn, before, 15.0):
+                    return True
+            time.sleep(1.0)
+        # 路线三：播放器里不会跳走的 ›
+        if drv.click_inline_next():
+            self._web_status("灵梦：点「下一题」…", "info")
+            if drv.wait_advanced(qn, before, 12.0):
+                return True
+        # 路线四：交回给用户，只等页面变化（最坏也是停在原题，不会把作业页弄丢）
+        self._web_status(f"灵梦：第 {qn} 题做完了。你自己点一下「Next question」，我接着做", "info")
+        return drv.wait_advanced(qn, before, 30.0)
+
+    @staticmethod
+    def _web_has_more_parts(st: dict) -> bool:
+        """当前 Question 是否还有后面的小问（part 1/N, 2/N ...）。"""
+        try:
+            pv = (st or {}).get("part") or []
+            if len(pv) == 2:
+                n, m = int(pv[0]), int(pv[1])
+                return 0 < n < m
+        except Exception:
+            pass
+        return False
+
+    @staticmethod
+    def _web_active_checks(st: dict) -> list[dict]:
+        """当前小问真正可勾的复选框；上一小问留下的 disabled 框不算。
+
+        Pearson 多小问会把 Part 1 的选项保留在 DOM 里并 disabled。旧逻辑
+        直接 `bool(st.get("checks"))`，于是 Part 2 明明只剩填空，却被判成
+        “还要选选项”，模型不给 CHOICE 就被跳过（Q10 Part 2 实测）。
+        """
+        return [c for c in (st.get("checks") or [])
+                if isinstance(c, dict) and not c.get("disabled")]
 
     def _web_targets(self, st: dict, part_n: int) -> list[dict]:
         """当前小问可填的框：未作答（placeholder）优先，其次按小问号。
@@ -4008,6 +4153,20 @@ class App:
         boxes = list(st.get("fields") or []) + list(st.get("inputs") or [])
         usable = [b for b in boxes
                   if not b.get("readonly") and not b.get("disabled")]
+        # 只跳过「已经判过分、锁住了」的空：判过分的 Part 会留在页面上，再往里头
+        # 写会把已经对的答案搅乱。
+        # **但「填着内容、却还能编辑」的框必须留下** —— 那多半是上一轮填错的答案，
+        # 我们要先清掉再写新的。（灵梦：写错的字得擦掉重写，不能当没看见。）
+        # 2026-11-28 Q12 实锤：错答案留在框里，旧逻辑把它当「已填」跳过，
+        # 结果既不改也不清，直接跳到下一题。
+        usable = [b for b in usable
+                  if not (b.get("filled") and b.get("disabled"))]
+        # 没选中的那个选项里的空：填了不计分，还会把做过的题再填一遍。
+        # 判断依据是 in_opt（往上数六层、正好只有一个 radio 的容器），
+        # **不是** id 里有没有 Decoy —— Pearson 把「选中的那个选项」里的空
+        # 也起名叫 Decoy1，按名字过滤会把该填的空跳过。
+        if any(r.get("checked") for r in (st.get("radios") or [])):
+            usable = [b for b in usable if b.get("in_opt") != "unchecked"]
         ph = [b for b in usable
               if "enter your response" in str(b.get("label") or "").lower()]
         if ph:
@@ -4021,6 +4180,9 @@ class App:
     def _web_skip(self, drv, key: str) -> bool:
         """这题答不了：先写入 review 账本，再让主循环跳到下一道未完成题。"""
         self._web_round_failed = True
+        self._web_hint = ""
+        self._web_hint_qno = 0
+        self._web_hint_part = ()
         try:
             self._web_dismiss(drv)
         except Exception:
@@ -4048,11 +4210,42 @@ class App:
             return False
         if qno:
             self._web_status(
-                f"魔理沙：第 {qno} 题先留给人工，自动跳到下一道未完成题。{_extra}", "warn")
+                f"魔理沙：第 {qno} 题先记入待人工账本；未完成前不跳下一个 Question。{_extra}",
+                "warn")
         else:
             self._web_status(
-                f"魔理沙：这道题先留给人工，自动继续找下一题。{_extra}", "warn")
+                f"魔理沙：这道题先记入待人工账本，停在本题等重试。{_extra}", "warn")
         return False
+
+    def _web_stale_retry(self, drv, key: str) -> bool:
+        """「丢掉这轮答案重新读题」的限流器（P0-3）。
+
+        返回 True = 回主循环再读一遍本页；返回 False = 该交还主循环了。
+
+        以前这条路没有上限：一旦 `field_present` 因为拿不到主世界而恒为 False，
+        每一轮都会「读题 → 算三遍 → 丢掉 → 再读题」，静默烧 token 到天荒地老。
+        （魔理沙：三次都瞄不准，就先记下来，别在这儿把魔力耗干。）
+        """
+        _stale = getattr(self, "_web_stale", None)
+        if not isinstance(_stale, dict):
+            _stale = {}
+        try:
+            _stale[key] = int(_stale.get(key, 0)) + 1
+        except Exception:
+            _stale[key] = 1
+        self._web_stale = _stale
+        n = _stale[key]
+        if n >= 3:
+            _stale.pop(key, None)
+            self._web_status(
+                "魔理沙：这题的控件老是变，重算三次都没能落下笔，"
+                "记成待人工、跳到下一题。", "warn")
+            self._web_skip(drv, key)
+            return False
+        self._web_status(
+            f"灵梦：控件在填写前又变了，丢掉这轮答案重新读题…（第 {n} 次）", "warn")
+        self._web_seen.discard(key)
+        return True
 
     def _web_dismiss(self, drv) -> None:
         """点掉当前判分弹窗内部的 OK，并等它真的消失。"""
@@ -4072,46 +4265,230 @@ class App:
                 return
             time.sleep(0.3)
 
-    def _web_fill(self, drv, fid: str, text: str) -> bool:
-        """填一个框，并确认真的填进去了（编辑器偶尔会吞输入）。"""
-        for _ in range(3):
+    @staticmethod
+    def _deparen(text: str) -> str:
+        """把只包着一个简单项的括号拆掉：`(1)/(2)` → `1/2`。
+
+        帕秋莉：括号只是排版。`(1)/(2)` 和 `1/2` 指的是同一个数，
+        编辑器回读时喜欢加括号，不能因此判人家填错。
+        """
+        prev = None
+        out = text or ""
+        while prev != out:
+            prev = out
+            out = re.sub(r"\(([0-9A-Za-z.]+)\)", r"\1", out)
+        return out
+
+    @staticmethod
+    def _fill_matches(expected: str, got: str) -> bool:
+        """回读值是否就是期望答案。
+
+        帕秋莉：同一个答案有好几种写法——`\\frac{1}{2}`、`1/2`、`(1)/(2)`；
+        而 `2` 出现在 `-2`、`2.5`、`3/2`、`√3`、`x+1` 里面，都不算填对了。
+        判定顺序：先比等价写法 → 再比数值 → 最后才做「独立 token」匹配。
+
+        （旧版只做 `exp in got`，把填错的 12 当成 2；上一版补了边界，但边界里
+        不含 `- . / ^ √ +`，于是 `-2`、`2.5`、`√3` 又被当成了 `2`。）
+        """
+        if not expected or not got:
+            return False
+        # 回读常常是 Pearson 的「朗读式」文本（`6500 equals 5000 left parenthesis …`），
+        # 先翻回数学写法再比，否则填对了也会被判「没填进去」。
+        try:
+            expected = latex.aria_to_plain(expected)
+            got = latex.aria_to_plain(got)
+        except Exception:
+            pass
+        a = latex.normalize_answer(expected)
+        b = latex.normalize_answer(got)
+        if not a or not b:
+            return False
+
+        # 1) 期望答案的几种等价写法（原样 / 粘贴形态 / 按键形态 / 去括号）
+        forms = [a]
+        for conv in (latex.to_paste_input, latex.to_editor_input):
             try:
-                drv.focus_field(fid)
-                time.sleep(0.35)
-                drv.clear_field()
-                time.sleep(0.35)
-                # 粘贴用真符号（∞ ∪ √），粘贴失败才退回按键快捷键
-                if not drv.paste_math(latex.to_paste_input(text)):
-                    drv.insert_math(latex.to_editor_input(text))
-                time.sleep(0.6)
+                form = latex.normalize_answer(conv(expected))
             except Exception:
-                continue
-            exp = latex.normalize_answer(text)
-            for _ in range(10):
-                time.sleep(0.25)
+                form = ""
+            if form and form not in forms:
+                forms.append(form)
+        for form in list(forms):
+            plain = App._deparen(form)
+            if plain and plain not in forms:
+                forms.append(plain)
+        b_plain = App._deparen(b)
+        if b in forms or b_plain in forms:
+            return True
+
+        # 2) 数值等价：3 与 3.0、1/2 与 0.5
+        try:
+            na = verify_math.parse_number_exact(a)
+            nb = verify_math.parse_number_exact(b_plain)
+            # 带逗号的可能是有序对 (5,25)，也可能是千分位，宁可不当数字比
+            if (na is not None and nb is not None
+                    and "," not in a and "," not in b_plain and na == nb):
+                return True
+        except Exception:
+            pass
+
+        # 3) 独立 token：前后不能紧贴数字/字母/小数点/斜杠/幂/根号/正负号
+        edge = r"[0-9A-Za-z._/^√+π∞\-]"
+        try:
+            return bool(re.search(
+                r"(?<!" + edge + r")" + re.escape(a) + r"(?!" + edge + r")", b))
+        except re.error:
+            return False
+
+    def _web_field_empty(self, drv, fid: str) -> bool:
+        """这个框是不是还空着（占位符还在）。
+
+        帕秋莉：判断「有没有落笔」只需要看那行占位提示还在不在，
+        不需要读出内容 —— 朗读式文本各版本写法不一，靠不住。
+        """
+        try:
+            return bool(re.search(r"enter your response|nothing|^\s*$",
+                                  str(drv.field_text(fid) or ""), re.I))
+        except Exception:
+            return True
+
+    def _web_fill(self, drv, fid: str, text: str) -> bool:
+        """填一个框，并确认真的填进去了。
+
+        2026-11-28 重写。老版本有两条硬伤：
+        1. 回读用 `field_text`，而它把「两份渲染 + aria-label」拼在一起，
+           `2` 读成 `"222"` —— 任何填空都会被判「没填进去」，
+           然后 3 次粘贴 + 4 次 insert 来回刷，一题耗 20 多秒再跳过。
+        2. 重试轮次太多、每次轮询 2.5 秒，遇上不匹配就是干等。
+
+        现在的策略：粘贴为主（粘贴会触发编辑器的输入事件，Pearson 才认账），
+        每轮最多等 ~1.6 秒；两轮粘贴 + 一轮按键兜底。
+        最后如果「框里确实有东西」但值对不上，也放行交给 Check 判 ——
+        总比把整题扔掉强（灵梦：写歪了可以改，交白卷没得救）。
+        """
+        want = latex.to_paste_input(text)
+        typed = latex.to_editor_input(text)
+        # 含分式 / 指数 / 根号的答案一律「按键逐字打」。
+        # 整段粘贴（等价于整段 insertText）会被编辑器把 `/` 的分母一路吃到后面，
+        # 实测 `5(x+3/2)^2` 会变成「分母里塞了 )²」的坏结构，判分直接不认。
+        _structural = bool(re.search(r"[/^_\\]", typed))
+
+        def _readback() -> str:
+            """等回读**稳定**再取值。
+
+            2026-11-28 实测：打完字立刻读，会读到「只渲染了一半」的标签
+            （`right parenthesis Superscript …` 这种），于是被当成填错。
+            所以要求连续两次读到同一个非空值才算数。
+            """
+            last = None
+            same = 0
+            for _ in range(16):
+                time.sleep(0.2)
                 try:
                     txt = drv.field_text(fid)
                 except Exception:
                     txt = ""
-                got = latex.normalize_answer(txt)
-                if exp and got and (exp == got or exp in got):
-                    return True
-        # 最后兜底：有些 eqEditor 只认 Input.insertText
-        for _ in range(4):
+                if txt and txt == last:
+                    same += 1
+                    if same >= 1 and not self._web_field_empty(drv, fid):
+                        return txt
+                else:
+                    same = 0
+                last = txt
+            return last or ""
+
+        def _type_in() -> None:
+            # 清空后必须等够，否则 `clear_field` 的收尾会把刚打的字一起带走
+            # （实测 0.25s 会丢内容，0.4/0.7s 才稳）。
+            drv.focus_field(fid)
+            time.sleep(0.45)
+            drv.clear_field()
+            time.sleep(0.7)
+            drv.insert_math(typed)
+            time.sleep(0.45)
+
+        def _paste_in() -> None:
+            drv.focus_field(fid)
+            time.sleep(0.45)
+            drv.clear_field()
+            time.sleep(0.7)
+            drv.paste_math(want)
+            time.sleep(0.45)
+
+        def _balanced(s: str) -> bool:
+            """括号是否配平（用来识别「只打了一半」的输入）。"""
             try:
-                drv.focus_field(fid)
-                time.sleep(0.2)
-                drv.clear_field()
-                time.sleep(0.2)
-                drv.insert(latex.to_paste_input(text))
-                time.sleep(0.8)
-                txt = drv.field_text(fid)
-                exp = latex.normalize_answer(text)
-                got = latex.normalize_answer(txt)
-                if exp and got and (exp == got or exp in got):
+                p = latex.aria_to_plain(s)
+            except Exception:
+                p = s or ""
+            d_ = 0
+            for ch in p:
+                if ch == "(":
+                    d_ += 1
+                elif ch == ")":
+                    d_ -= 1
+                    if d_ < 0:
+                        return False
+            return d_ == 0
+
+        # 结构型（含分式/指数/根号）只走按键，**绝不退回粘贴** ——
+        # 粘贴会把 `5(x+3/2)^2` 解析成「分母里塞了 )²」的坏结构，
+        # 而且回读是英文朗读文本，越比对越乱。所以：按键一次，
+        # 只要框里真的落了字就交给 Check 判。
+        if _structural:
+            # 打两轮：第一轮若只落了一半（括号不配平），再清一次重打。
+            for _try in range(2):
+                try:
+                    _type_in()
+                except Exception:
+                    pass
+                txt = _readback()
+                if not self._web_field_empty(drv, fid) and _balanced(txt):
                     return True
+                self._web_status(
+                    f"魔理沙：公式只落了一半（第 {_try + 1} 次），清掉重打。", "warn")
+            # 还不行才退粘贴兜底（至少让框里有内容，交给 Check 判）
+            try:
+                _paste_in()
             except Exception:
                 pass
+            if not self._web_field_empty(drv, fid):
+                self._web_status(
+                    "魔理沙：按键两轮都没打完整，改用粘贴兜底；请留意判分反馈。", "warn")
+                return True
+            return False
+
+        # 普通数值 / 简单表达式：先粘贴（快且稳），不成再按键
+        for _fn in (_paste_in, _type_in):
+            try:
+                _fn()
+            except Exception:
+                continue
+            txt = _readback()
+            if self._fill_matches(text, txt):
+                return True
+
+        # 兜底：Input.insertText（只写内容、不一定触发事件，慎用）
+        try:
+            drv.focus_field(fid)
+            time.sleep(0.2)
+            drv.clear_field()
+            time.sleep(0.2)
+            drv.insert(want)
+            time.sleep(0.6)
+        except Exception:
+            pass
+        txt = _readback()
+        if self._fill_matches(text, txt):
+            return True
+
+        # 内容在、但对不上：放行。让 Check answer 来判，
+        # 判错还能带提示重算一次；总比整题跳过（等于 0 分）好。
+        if not self._web_field_empty(drv, fid):
+            self._web_status(
+                f"魔理沙：这格填的是「{str(txt)[:20]}」，和期望的「{str(text)[:20]}」不完全一样，"
+                "先交给 Check 判。", "warn")
+            return True
         return False
 
 
@@ -4124,11 +4501,17 @@ class App:
         def on_delta(chunk: str) -> None:
             buf.append(chunk)
 
+        # 全自动协议只要 CHOICE/MATRIX/DROPDOWN/VALUE/FIELD 几行；有的模型
+        # 会突然输出上万 token（实测单次 64 秒），把整轮拖死。
+        # 给网页求解设一个上限；用户在“附加咒文”里写了 max_tokens 就以用户为准。
+        extra = dict(ctx.get("extra") or {})
+        extra.setdefault("max_tokens", 2200)
+
         res = llm.chat_stream(
             base, api_key, model, msgs,
             reasoning_effort=ctx.get("effort"),
             temperature=temperature,
-            extra_body=ctx.get("extra") or None,
+            extra_body=extra or None,
             timeout=timeout,
             on_delta=on_delta,
             cancel=self.web_stop,
@@ -4137,45 +4520,64 @@ class App:
 
     @staticmethod
     def _web_part_text(text: str, n: int) -> str:
+        """取出第 n 小问那一段正文。
+
+        慧音：Pearson 的小问标题长这样——「Part 2 of 3: 求导」。
+        光切到 Part 2 会剩下一个「of 3:」的尾巴，模型读起来像半句话，
+        所以这里把它一并抹掉。
+        """
         if n <= 0:
             return text or ""
+        raw = text or ""
         try:
-            m = re.search(rf"Part\s+{n}\b(.*?)(?=Part\s+{n + 1}\b|\Z)",
-                          text or "", re.S | re.I)
-            return (m.group(1) if m else (text or ""))
+            m = re.search(rf"Part\s+{n}\b(.*?)(?=Part\s+{n + 1}\b|\Z)", raw, re.S | re.I)
+            seg = m.group(1) if m else raw
         except Exception:
-            return text or ""
-
-    @staticmethod
-    def _web_clip(s: str, limit: int) -> str:
-        s = s or ""
-        if len(s) <= limit:
-            return s
-        head = max(200, limit - 500)
-        return s[:head] + "\n……\n" + s[-500:]
+            seg = raw
+        return re.sub(r"^\s*of\s+\d+\s*[:：]\s*", "", seg, count=1)
 
     @staticmethod
     def _web_focus_text(text: str, n: int) -> str:
-        """多小问同页时，只把题干 + 当前小问交给模型，避免它顺手回答旧小问。"""
+        """多小问同页时，只把「共享题干 + 当前小问」交给模型。
+
+        P0-5：以前这里的判据是 `len(_pieces) >= 3`，可是
+        `re.split(..., maxsplit=2)` 在只有一处「Part 1」的文本上只切出 2 段——
+        条件永远不成立，stem 永远是空串。于是从第 2 小问起，模型只看到孤零零
+        一句小问，看不到共享的题干，等于闭着眼睛答题。
+        （紫：境界被切成两半的时候，你别拿量三半的尺子去量。）
+        """
         if n <= 0:
             return text or ""
         raw = text or ""
         seg = App._web_part_text(raw, n).strip()
         stem = ""
         try:
-            _pieces = re.split(r"Part\s+1\b", raw, maxsplit=2, flags=re.I)
-            if len(_pieces) >= 3:
-                stem = _pieces[1].strip()
+            # 「Part 1」之前的部分才是真正的小问共享题干
+            pieces = re.split(r"Part\s+\d+\b", raw, maxsplit=1, flags=re.I)
+            if pieces:
+                stem = pieces[0].strip()
         except Exception:
             stem = ""
-        if n == 1 and stem and seg.startswith(stem[:60]):
-            seg = seg[len(stem):].lstrip()
-        if not seg or seg == raw:
+        if not seg or seg == raw.strip():
             return raw
-        stem = App._web_clip(stem, 1200)
         seg = App._web_clip(seg, 2000)
-        return (f"当前是第 {n} 小问，只回答这一小问。\n"
-                + (stem + "\n\n" if stem else "") + seg)
+        stem = App._web_clip(stem, 1200)
+        return ("当前是第 " + str(n) + " 小问，只回答这一小问。\n"
+                + ("【共享题干】\n" + stem + "\n\n" if stem else "")
+                + "【本小问】\n" + seg)
+
+    @staticmethod
+    def _web_clip(s: str, limit: int) -> str:
+        """截断长文本：保住开头和结尾，中间省略。
+
+        帕秋莉：一本书太长的时候，前后封面都得留着——只读前半本，
+        你永远不知道结论在第几页。
+        """
+        s = s or ""
+        if len(s) <= limit:
+            return s
+        head = max(200, limit - 500)
+        return s[:head] + "\n……\n" + s[-500:]
 
     @staticmethod
     def _web_quadratic_points(text: str, graph: dict) -> list[tuple[float, float]] | None:
@@ -4326,12 +4728,28 @@ class App:
     def _web_step(self, drv: "web.WebPlayer") -> bool:
         """处理一道题。返回 False 表示该停了（做完/被卡住）。"""
         st = drv.state()
+        # 重试提示只属于“同一道题”。一旦页面已经换题，旧提示必须丢掉，
+        # 否则下一题会被当成重试、题号不自增，还会把上一题的答案提示带过去。
+        try:
+            _st_qno = int(st.get("qno") or 0)
+            _st_part = tuple(st.get("part") or [])
+        except Exception:
+            _st_qno, _st_part = 0, ()
+        if self._web_hint and (
+                getattr(self, "_web_hint_qno", 0) != _st_qno
+                or tuple(getattr(self, "_web_hint_part", ())) != _st_part):
+            self._web_hint = ""
+            self._web_hint_qno = 0
+            self._web_hint_part = ()
         # 整份作业每一题都已判过分（含 part 0.4 的 Partially correct）：不再动页面，
         # 避免重启后把已经提交的答案又重填一遍，甚至把部分题改坏。
         try:
             _qs0 = [q for q in (st.get("questions") or []) if int(q.get("n") or 0) > 0]
             _kinds0 = [self._web_status_kind(q.get("status")) for q in _qs0]
-            if _qs0 and all(k in ("correct", "incorrect", "partial") for k in _kinds0):
+            # 多小问的题，左侧状态可能已经是 Correct/Partially correct，
+            # 但当前只做到 Part 2/7；这时不能把整份作业判成“做完了”。
+            if (_qs0 and not self._web_has_more_parts(st)
+                    and all(k in ("correct", "incorrect", "partial") for k in _kinds0)):
                 self._web_all_done = True
                 if not self._web_ok and not self._web_fail:
                     self._web_ok = _kinds0.count("correct")
@@ -4339,6 +4757,16 @@ class App:
                                          if k in ("incorrect", "partial"))
                 self._web_status(
                     f"灵梦：整份作业都处理完了（对 {self._web_ok} / 错 {self._web_fail}）。", "ok")
+                return False
+        except Exception:
+            pass
+        # 交作业 / 结束页：这一页摆着「Submit / Done」这种封印。
+        # 灵梦：那不是我能碰的按钮 —— 交不交卷是人的事。看见就停，让它自己决定。
+        try:
+            if st.get("hasDanger") and not st.get("hasCheck"):
+                self._web_status(
+                    "灵梦：这页有「Submit / Done」按钮，看着像交作业的页面，"
+                    "我不点，你自己确认后再继续。", "warn")
                 return False
         except Exception:
             pass
@@ -4377,7 +4805,64 @@ class App:
         except Exception:
             pass
         key = self._web_key(st) if st else ""
-        # 当前题已经答对：不要死等 Next，直接找下一道没答完的题
+        # 一算出 key 就记下来：后面任何一步抛异常，_web_loop 才能把
+        # 这个 key 从 _web_seen 里丢掉，避免一次抖动被当成“处理过了”跳过。
+        self._web_current_key = key
+        # 当前页还有没有「待填 / 待选」的控件。
+        # 灵梦：题号旁边打个勾，只说明**已经交过的那几小问**判完了，
+        # 不代表这一问也做完了 —— 多小问常把状态挂在整题上。
+        try:
+            _pending_now = bool(
+                [f for f in (st.get("fields") or [])
+                 if not f.get("filled") and not f.get("disabled")]
+                or [r for r in (st.get("radios") or [])
+                    if not r.get("checked") and not r.get("disabled")]
+                or [c for c in (st.get("checks") or [])
+                    if not c.get("checked") and not c.get("disabled")]
+                or [d for d in (st.get("dropdowns") or []) if not d.get("locked")])
+        except Exception:
+            _pending_now = False
+        # 多小问硬约束：当前 Part 做完后，只能翻到下一小问，绝不跳 Question。
+        # 旧逻辑会在 Part 1 判对后调用 _web_jump_next_unanswered，直接跳到
+        # 下一道题；Q10 Part 1/2、Q23 Part 1/7 都踩过这个坑。
+        try:
+            # 只有“当前 Part 已经判过分”才允许翻下一小问；
+            # 填了值但还没 Check（例如交卷前复核失败、正在带提示重算）时，
+            # 绝不能翻页/跳题，否则会把这小问的答案丢掉（Q8 Part 1 实测）。
+            _q_pre = next((x for x in (st.get("questions") or [])
+                           if int(x.get("n") or 0) == int(st.get("qno") or 0)), None)
+            _part_judged = bool(
+                _q_pre and self._web_done_status(_q_pre.get("status")))
+            if (self._web_has_more_parts(st) and not _pending_now
+                    and not getattr(self, "_web_hint", "")
+                    and _part_judged):
+                _fb_now = ""
+                try:
+                    _fb_now = (drv.feedback() or "").strip()
+                except Exception:
+                    _fb_now = ""
+                if not _fb_now:
+                    _pv = st.get("part") or []
+                    _pn, _pm = int(_pv[0]), int(_pv[1])
+                    self._web_status(
+                        f"灵梦：还有第 {_pn + 1} 小问（共 {_pm} 问），先翻到下一小问，不跳题。",
+                        "info")
+                    if self._web_next(drv, key):
+                        return True
+                    _st_after = drv.state() or {}
+                    _pv_after = _st_after.get("part") or []
+                    if len(_pv_after) == 2 and tuple(_pv_after) != tuple(_pv):
+                        return True
+                    self._web_status(
+                        "灵梦：当前题还有小问没翻过去，停在这里等你处理，不跳到下一题。",
+                        "warn")
+                    self._web_round_failed = True
+                    return False
+        except Exception:
+            pass
+        # 当前题已经答对：不要死等 Next，直接找下一道没答完的题。
+        # **但前提是本页真的没有待做的控件** —— 否则就会出现「最后小问被跳过」：
+        # 整题状态显示已判分，而 Part 3 的空还空着，我们就跳走了。
         try:
             _qno = int(st.get("qno") or 0)
             _q = next((x for x in (st.get("questions") or [])
@@ -4387,13 +4872,19 @@ class App:
                 _fb_open = (drv.feedback() or "").strip()
             except Exception:
                 _fb_open = ""
-            if _q and not _fb_open and self._web_done_status(_q.get("status")):
+            # _web_hint 非空 = 当前题刚被判错、正在带提示重算；
+            # 这时绝不能因为左侧题号暂时显示“已完成”就跳到下一题。
+            if (_q and not _fb_open and not _pending_now
+                    and not getattr(self, "_web_hint", "")
+                    and self._web_status_kind(_q.get("status")) == "correct"):
                 if self._web_jump_next_unanswered(drv, st):
                     return True
                 self._web_status(
                     f"灵梦：第 {_qno} 题已答过，后面也没有未完成的题了。", "ok")
                 return False
-            if _q and not _fb_open and not self._web_done_status(_q.get("status")):
+            if (_q and not _fb_open and not _pending_now
+                    and not getattr(self, "_web_hint", "")
+                    and not self._web_done_status(_q.get("status"))):
                 if self._web_jump_first_unfinished(drv, st):
                     return True
         except Exception:
@@ -4453,7 +4944,7 @@ class App:
 
         has_inputs = (bool(st.get("fields")) or bool(st.get("inputs"))
                       or bool(st.get("selects")) or bool(st.get("dropdowns")))
-        has_choices = bool(st.get("radios")) or bool(st.get("checks"))
+        has_choices = bool(st.get("radios")) or bool(self._web_active_checks(st))
         has_graph = bool(st.get("graph"))
         # 图形题：只要当前小问是“画图”而不是选项，画完直接 Check，不交给文本模型
         if has_graph:
@@ -4562,10 +5053,27 @@ class App:
             self._web_round_failed = True
             return False
 
+        # 刚翻页时正文还是「Please wait...」，这时读到的题干是残的，模型会答不出来。
+        # 等它加载完再读一次（学自《作业侠客》2026-11-25 的实测）。
+        try:
+            for _ in range(10):
+                if "please wait" not in str(st.get("text") or "").lower():
+                    break
+                time.sleep(0.6)
+                _st2 = drv.state()
+                if _st2:
+                    st = _st2
+        except Exception:
+            pass
+
         _is_retry = bool(self._web_hint)
         self._web_seen.add(key)
         if not _is_retry:
             self._web_question += 1
+            # 换到新的一题就把答案面板清掉。不清的话面板里会一直挂着上一题的
+            # 内容（用户会以为这题已经答过了），而且誊清公式时会越积越长。
+            # （灵梦：换一张符卡，纸当然要换一张。）
+            self.q.put(("clear", "ans"))
         text = (st.get("text") or "").strip()
         # 公式补读：MathML/KaTeX/MathJax 的可读文本常常不在 innerText 里（学自 Auto-Pearson）
         try:
@@ -4606,19 +5114,30 @@ class App:
                 text += ("\n\n" + "\n".join(blocks)
                          + "\n（这是下拉框题：DROPDOWN 按顺序写每个下拉框要选的编号，用 ; 分隔）")
 
+        # P2-9：交给式神的题干必须是「公式 + 咒文提示 + 下拉框选项」都在的那一份。
+        # 以前 focus_text 是从 st["text"] 取的，而下拉框选项只拼进了上面这个
+        # 局部 text —— 式神只知道「按顺序写编号」，却不知道编号是什么，纯靠猜。
+        # 把「当前这一节」顶到最前面。整页正文只留 4000 字，长题里当前小节的
+        # 指令常被截掉，式神于是把前面小问的答案照抄过来。
+        # （慧音：问第 (d) 问，就先把第 (d) 问的题面递过去。）
+        _cur = str(st.get("cur") or "").strip()
+        rich_text = text
+        focus_text = self._web_focus_text(rich_text, part_n)
+        # 「当前这一节」单独贴在最前面，别混进共享题干里（否则会被切成两半）
+        if _cur and _cur not in focus_text:
+            focus_text = "【当前这一节】\n" + _cur + "\n\n" + focus_text
+        # 图题的多小问共享同一张图/图注；只给“当前小问”会丢掉图形描述，
+        # 模型就只能回 CHOICE: -> / VALUE: ->（Q4 Part 2 实测）。
+        if part_n > 1:
+            focus_text = (
+                "【整题上下文（含前面小问的已知条件；前面小问的答案只作参考、"
+                "绝对不要照抄；只回答【当前小问】）】\n"
+                + rich_text + "\n\n【当前小问】\n" + focus_text)
+        # 小问提示只加在面板显示上；focus_text 自己会带一份，别重复。
         if part_n:
-            seg = ""
-            try:
-                mm = re.search(rf"Part {part_n}\b(.*?)(?=Part {part_n + 1}\b|\Z)", text, re.S)
-                if mm:
-                    seg = mm.group(1).strip()[:300]
-            except Exception:
-                seg = ""
+            seg = self._web_part_text(rich_text, part_n).strip()[:300]
             text = (f"当前是第 {part_n} 小问（共 {part_m} 问），只回答这一小问。\n"
-                    + (seg + "\n\n" if seg else "") + text)
-        focus_text = self._web_focus_text(st.get("text") or "", part_n)
-        if self._web_hint:
-            focus_text = self._web_hint + "\n\n" + focus_text
+                    + (seg + "\n\n" if seg else "") + rich_text)
         self._web_current_key = key
         self.q.put(("clear", "src"))
         self.q.put(("append", "src", text, "body"))
@@ -4650,11 +5169,31 @@ class App:
         ctx = self._web_ctx
         imgs = st.get("imgs") or []
         use_img = bool(imgs) and bool(ctx.get("vision"))
-        packet = question_reader.build_packet(st, focus_text)
+        # P2-10：题面顺序和回填顺序必须是同一个顺序。
+        # 以前 packet 用的是页面顺序，真正回填时 `_web_targets` 又把占位框
+        # 提前、把第 N 个框提到最前 —— 多空题的「值1; 值2」就可能填到相反的框里。
+        # 现在先用同一个排序生成 packet，回填时不再二次重排。
+        _ordered = self._web_targets(st, part_n)
+        _st_packet = st
+        if _ordered:
+            _st_packet = dict(st)
+            _st_packet["fields"] = list(_ordered)
+            _st_packet["inputs"] = []
+            _st_packet["labels"] = [str(b.get("label") or "") for b in _ordered]
+        packet = question_reader.build_packet(_st_packet, focus_text)
         self._web_model_fails = getattr(self, "_web_model_fails", 0)
         spec = {}
         try:
             def _ask_engine(msgs, temperature=0.7, tag="sample"):
+                if tag == "fallback":
+                    # 并发流式采样偶尔会被网关截断（同一题连续 3+1 路都断）。
+                    # 最后兜底改走**单次非流式**请求，避开 SSE 截断问题。
+                    time.sleep(0.8)
+                    res = llm.chat_once(
+                        ctx["base"], ctx["key"], ctx["model"], msgs,
+                        reasoning_effort=None, temperature=0.2,
+                        extra_body={"max_tokens": 2200}, timeout=90.0)
+                    return (res.text or "").strip()
                 return self._ask_cancellable(
                     ctx["base"], ctx["key"], ctx["model"], msgs, ctx,
                     temperature=temperature)
@@ -4726,15 +5265,22 @@ class App:
                 self._web_status("魔理沙：选项刚加载出来，按最新页面重算…", "info")
                 st = _live
                 has_inputs = bool(_lf or _li or st.get("selects") or st.get("dropdowns"))
-                has_choices = bool(st.get("radios")) or bool(st.get("checks"))
+                has_choices = bool(st.get("radios")) or bool(self._web_active_checks(st))
                 drops = st.get("dropdowns") or []
                 try:
                     _lp = st.get("part") or [0, 0]
                     _lpn = int(_lp[0]) if len(_lp) == 2 and _lp[1] else 0
                 except Exception:
                     _lpn = 0
+                _ordered2 = self._web_targets(st, _lpn)
+                _st2 = st
+                if _ordered2:
+                    _st2 = dict(st)
+                    _st2["fields"] = list(_ordered2)
+                    _st2["inputs"] = []
+                    _st2["labels"] = [str(b.get("label") or "") for b in _ordered2]
                 packet2 = question_reader.build_packet(
-                    st, self._web_focus_text(_live.get("text") or text, _lpn))
+                    _st2, self._web_focus_text(_live.get("text") or text, _lpn))
                 try:
                     result2 = answer_engine.AnswerEngine(
                         _ask_engine, samples=2, escalate=1, review=False, reasoner=False,
@@ -4753,10 +5299,8 @@ class App:
             _old_sig = self._web_sig(st)
             _new_sig = self._web_sig(_guard_st)
             if _old_sig and _new_sig and _old_sig != _new_sig:
-                self._web_status("灵梦：等答案时页面已经变了，丢掉旧答案重新读题…", "warn")
-                self._web_seen.discard(key)
                 time.sleep(0.5)
-                return True
+                return self._web_stale_retry(drv, key)
             if _guard_st.get("fields") or _guard_st.get("inputs") \
                     or _guard_st.get("radios") or _guard_st.get("checks"):
                 st = _guard_st
@@ -4813,7 +5357,7 @@ class App:
                     "head"))
 
         # ---- 选项（单选 / 多选）
-        if st.get("radios") or st.get("checks"):
+        if st.get("radios") or self._web_active_checks(st):
             letters = spec.get("choices") or ([spec["choice"]] if spec["choice"] else [])
             if not letters:
                 self._web_status("灵梦：这题要选选项，但模型没给 CHOICE，跳过", "warn")
@@ -4835,7 +5379,7 @@ class App:
                     _ai = [i for i in (st.get("inputs") or [])
                            if not i.get("disabled") and not i.get("readonly")]
                     has_inputs = bool(_af or _ai or st.get("selects") or st.get("dropdowns"))
-                    has_choices = bool(st.get("radios")) or bool(st.get("checks"))
+                    has_choices = bool(st.get("radios")) or bool(self._web_active_checks(st))
                     drops = st.get("dropdowns") or []
             except Exception:
                 pass
@@ -4843,10 +5387,8 @@ class App:
         # P0：填任何控件前再核对一次快照。Pearson 在选项加载/小问切换时
         # 经常替换 DOM；如果控件 UID/签名已经变了，旧答案必须丢弃重读。
         if not self._web_snapshot_intact(drv, st):
-            self._web_status("灵梦：控件在填写前又变了，丢掉这轮答案重新读题…", "warn")
-            self._web_seen.discard(key)
             time.sleep(0.4)
-            return True
+            return self._web_stale_retry(drv, key)
 
         # ---- Pearson 下拉框（xlFillinItem）：可以和填空同时存在
         boxes = st.get("fields") or st.get("inputs")
@@ -4866,14 +5408,20 @@ class App:
                         drv.dropdown_close()
                     except Exception:
                         pass
-            picked = 0
-            for _i, _dd in enumerate(active):
-                if _i >= len(spec["drops"]):
-                    continue
+            # P1-1：以前用一个 picked 计数器，重试时把「已经选好的框」又数了
+            # 一遍 —— picked 虚高，`picked < need` 就被骗过去，结果带着空下拉框
+            # 去交卷。现在按框号记集合，已经选好的不重复计入。
+            # （咲夜：同一个盘子擦两遍，不会变成擦过两个盘子。）
+            ok_idx: set[int] = set()
+            need = min(len(active), len(spec["drops"]))
+
+            def _drop_index(_i: int):
                 try:
-                    idx = int(spec["drops"][_i]) - 1
+                    return int(spec["drops"][_i]) - 1
                 except Exception:
-                    continue
+                    return None
+
+            def _pick_drop(_i: int, _dd: dict, idx: int) -> None:
                 for _try in range(3):
                     try:
                         drv.dropdown_open(_dd["id"])
@@ -4882,40 +5430,39 @@ class App:
                         time.sleep(0.4)
                         drv.dropdown_close()
                         if r == "ok":
-                            picked += 1
-                            break
+                            ok_idx.add(_i)
+                            return
                     except Exception:
                         try:
                             drv.dropdown_close()
                         except Exception:
                             pass
-                        time.sleep(0.4)
-            need = min(len(active), len(spec["drops"]))
-            if need and picked < need:
+                    time.sleep(0.4)
+
+            for _i, _dd in enumerate(active):
+                if _i >= len(spec["drops"]):
+                    continue
+                idx = _drop_index(_i)
+                if idx is None:
+                    continue
+                _pick_drop(_i, _dd, idx)
+
+            if need and len(ok_idx) < need:
                 self._web_status(
-                    f"魔理沙：下拉框只选中 {picked}/{need}，再等一会儿重试…", "warn")
+                    f"魔理沙：下拉框只选上 {len(ok_idx)}/{need}，再等一会儿重试…", "warn")
                 time.sleep(1.5)
-                # 再试一次空下拉框
+                # 只补没选上的框
                 for _i, _dd in enumerate(active):
-                    if _i >= len(spec["drops"]):
+                    if _i in ok_idx or _i >= len(spec["drops"]):
                         continue
-                    try:
-                        idx = int(spec["drops"][_i]) - 1
-                    except Exception:
+                    idx = _drop_index(_i)
+                    if idx is None:
                         continue
-                    try:
-                        drv.dropdown_open(_dd["id"])
-                        time.sleep(0.5)
-                        r = drv.dropdown_pick(idx)
-                        time.sleep(0.4)
-                        drv.dropdown_close()
-                        if r == "ok":
-                            picked += 1
-                    except Exception:
-                        pass
-                if picked < need:
+                    _pick_drop(_i, _dd, idx)
+                if len(ok_idx) < need:
                     self._web_status(
-                        f"魔理沙：下拉框 {picked}/{need} 还是没选上，停在原题重试。", "warn")
+                        f"魔理沙：下拉框 {len(ok_idx)}/{need} 还是没选上，停在原题重试。",
+                        "warn")
                     self._web_round_failed = True
                     self._web_seen.discard(key)
                     return False
@@ -4951,11 +5498,9 @@ class App:
 
         # ---- 填空
         if has_inputs and boxes and (spec["matrix"] or spec.get("values") or spec["value"]):
+            # 顺序必须和上面生成 packet 时一致，这里不再二次重排（P2-10）。
+            # （慧音：题目问第几空，就答第几空——顺序一乱，全篇都错。）
             targets = self._web_targets(st, part_n)
-            _blank = [b for b in targets
-                      if "enter your response" in str(b.get("label") or "").lower()]
-            if _blank:
-                targets = _blank + [b for b in targets if b not in _blank]
             vals = spec.get("values") or ([spec["value"]] if spec["value"] else [])
 
             if spec["matrix"]:
@@ -4972,14 +5517,17 @@ class App:
                 self.q.put(("append", "ans", "已填入矩阵\n", "dim"))
 
             elif len(vals) > 1:
-                _only = _blank or targets
-                if len(_only) < len(vals):
+                if len(targets) < len(vals):
                     self._web_status("魔理沙：空框不够，跳过这题", "warn")
                     return self._web_skip(drv, key)
-                for b, v in zip(_only[:len(vals)], vals):
-                    if not self._web_fill(drv, b["id"], v):
-                        self._web_status("魔理沙：多空答案没填全，先跳过", "warn")
-                        return self._web_skip(drv, key)
+                # 用他的 `_fill_fields`：焦点确认 → clear_field 布尔 → insert_math
+                # → 等 aria-label 不再是占位符。不再粘贴、不再做值比对。
+                _err = self._fill_fields(drv, targets[:len(vals)], vals)
+                if _err:
+                    self._web_status("魔理沙：" + _err + "，先跳过", "warn")
+                    return self._web_skip(drv, key)
+                self._web_last_fills = [(key, b["id"], v)
+                                        for b, v in zip(targets[:len(vals)], vals)]
                 self.q.put(("append", "ans", "已填入： " + " ; ".join(vals) + "\n", "dim"))
 
             else:
@@ -4987,22 +5535,33 @@ class App:
                     self._web_status("魔理沙：找不到输入框，跳过", "warn")
                     return self._web_skip(drv, key)
                 fid = targets[0]["id"]
-                if not self._web_fill(drv, fid, spec["value"]):
-                    self._web_status("魔理沙：答案没填进去（编辑器吞输入），先跳过这题", "warn")
+                _err = self._fill_fields(drv, [targets[0]], [spec["value"]])
+                if _err:
+                    self._web_status("魔理沙：" + _err + "，先跳过这题", "warn")
                     return self._web_skip(drv, key)
+                self._web_last_fills = [(key, fid, spec["value"])]
                 self.q.put(("append", "ans", "已填入：" + str(drv.field_label(fid))[:60] + "\n", "dim"))
 
-        # ---- 图形题：用 Pearson 的 GraphControl API 画二次函数
+        # ---- 图形题：用 Pearson 的 GraphControl API 画函数
         if has_graph:
             try:
                 _pn, _pm = (st.get("part") or [0, 0])[:2]
                 _seg = self._web_part_text(st.get("text") or "", int(_pn or 0)).lower()
             except Exception:
                 _seg = (st.get("text") or "").lower()
-            _need_graph = any(k in _seg for k in (
+            _draw_text = any(k in _seg for k in (
                 "graph the parabola", "graph both", "graph the functions",
                 "graph the equation", "use the graphing tool", "graph f",
                 "graph y"))
+            # 「要你自己画」必须是**真的有作图控件**，而且要**没有待选选项**。
+            # 灵梦：题目说「先在纸上画，再选正确的那张图」——那就只是选择题。
+            # 页面上那四张坐标图是选项缩略图，把它们当作图区去画，
+            # 只会把一道好端端的选择题判成「公式没解析出来」然后整轮收工。
+            # 判据用 state 里的 draw_graph（大方块/带工具条/有放大入口），
+            # 不用题干关键词 —— 关键词分不清「画图区」和「选项里的图」。
+            _need_graph = (bool(st.get("draw_graph"))
+                           and not (st.get("radios") or [])
+                           and _draw_text)
             if _need_graph:
                 if key not in self._web_graph_done:
                     _graph = st.get("graph") or {}
@@ -5029,8 +5588,15 @@ class App:
                         except Exception as e:
                             _res = f"exception:{e}"
                     if str(_res) != "ok":
-                        self._web_status(
-                            f"魔理沙：图形没画成（{_res}），停在原题。", "warn")
+                        if str(_res) == "no-dijit":
+                            # P2-4：图形控件要靠 Dojo 的 registry 才够得着。
+                            # 有些 Pearson 页面根本不挂全局 dijit，式神够不到。
+                            self._web_status(
+                                "帕秋莉：这页的图形结界没有挂出 Dojo 的登记册"
+                                "（no-dijit），式神够不到，先停在原题。", "warn")
+                        else:
+                            self._web_status(
+                                f"魔理沙：图形没画成（{_res}），停在原题。", "warn")
                         self._web_round_failed = True
                         return False
                     self._web_graph_done.add(key)
@@ -5051,6 +5617,62 @@ class App:
         except Exception:
             st_now = st
 
+        # P2-6：Pearson 的 Check 常常是异步冒出来的。刚填完那一瞬间按钮还没渲染，
+        # 以前就直接判「没有下一题」整轮收工——到嘴的符卡就这么飞了。
+        # （灵梦：手都伸到赛钱箱边上了，你让我再等一下下会怎样？）
+        _filled = bool(spec.get("values") or spec.get("value") or spec.get("matrix")
+                       or spec.get("choices") or spec.get("drops"))
+        if _filled and not st_now.get("hasCheck") and not st_now.get("hasNext"):
+            for _w in range(12):
+                time.sleep(0.5)
+                try:
+                    _stc = drv.state() or {}
+                except Exception:
+                    _stc = {}
+                if _stc.get("hasCheck") or _stc.get("hasNext"):
+                    st_now = _stc
+                    break
+
+        # Check 灰着就说明还有空没填 / 选项没选；这时点它毫无反应，
+        # 只会白等一轮判分超时。（帕秋莉：门锁着就别敲了，先看看缺哪把钥匙。）
+        try:
+            if st_now.get("hasCheck") and st_now.get("hasCheckOn") is False:
+                # 框里内容明明是对的、Check 却还灰着 —— 说明编辑器把这次输入
+                # 显示出来了，但没记进 Pearson 的状态里（`insertText` 不触发
+                # 它的事件就是这样）。实测：清空 + 重新「粘贴」一次就解禁了。
+                # （帕秋莉：字写在纸上了，可登记簿没记；得再登记一遍。）
+                _refilled = False
+                for _k, _fid, _val in (getattr(self, "_web_last_fills", []) or []):
+                    if _k != key:
+                        continue        # 别的题填的格，别往这题上粘
+                    try:
+                        drv.focus_field(_fid)
+                        time.sleep(0.2)
+                        drv.clear_field()
+                        time.sleep(0.2)
+                        drv.paste_math(latex.to_paste_input(_val))
+                        time.sleep(0.4)
+                        _refilled = True
+                    except Exception:
+                        pass
+                if _refilled:
+                    self._web_status(
+                        "灵梦：Check 还是灰的，把刚填的格重新粘一遍，让它真的记上…", "info")
+                    time.sleep(0.6)
+                    try:
+                        st_now = drv.state() or st_now
+                    except Exception:
+                        pass
+                if st_now.get("hasCheckOn") is False:
+                    self._web_status(
+                        "灵梦：Check 按钮还是灰的（这页还有空没填、或选项没选），"
+                        "停在原题等一下。", "warn")
+                    self._web_round_failed = True
+                    self._web_seen.discard(key)
+                    return False
+        except Exception:
+            pass
+
         if st_now.get("hasCheck"):
             if st_now.get("canCheck") is False:
                 self._web_status(
@@ -5058,7 +5680,31 @@ class App:
                 self._web_round_failed = True
                 self._web_seen.discard(key)
                 return False
+            # 交卷前让式神复核一遍（学自《作业侠客》的 verify_filled）：
+            # 填完就交最容易交错；先自己重算一遍、再和已填的比对，通过了才点。
+            # （玉：交卷之前，先自己阅一遍卷。）
+            _vf = "skip"
+            try:
+                _vf = self._verify_before_submit(drv, st_now, getattr(self, "_web_ctx", {}))
+            except Exception:
+                _vf = "skip"
+            if _vf == "fixed":
+                # 复核指出选项选错了、已经改正 —— 回上一轮重新提交
+                self._web_seen.discard(key)
+                return True
+            if str(_vf).startswith("stop:"):
+                self._web_round_failed = True
+                self._web_seen.discard(key)
+                return False
             self._web_status("灵梦：点 Check answer…", "info")
+            # P2-5：记下点 Check 之前的 resultPosted，用来分辨「本题的判分」
+            # 和「上一题残留的 revision」——以前就是被陈旧值骗了一次。
+            _base_posted = None
+            try:
+                _ps0 = drv.player_state() if hasattr(drv, "player_state") else {}
+                _base_posted = _ps0.get("resultPosted")
+            except Exception:
+                _base_posted = None
             if not self._web_click_check(drv):
                 # 再给 Pearson 一次渲染时间，避免刚换题时误判
                 time.sleep(1.2)
@@ -5066,7 +5712,7 @@ class App:
                     self._web_status("灵梦：Check 按钮一直没出现，停在原题等一下。", "warn")
                     self._web_round_failed = True
                     return False
-            fb = self._web_feedback(drv)
+            fb = self._web_feedback(drv, base_posted=_base_posted)
             if not fb:
                 # 有时第一次点击被页面吞掉；按钮还在就再点一次
                 try:
@@ -5076,12 +5722,16 @@ class App:
                             drv.click_text_native(r"^(check answer|final check)$")
                         except Exception:
                             self._web_click_check(drv)
-                        fb = self._web_feedback(drv, timeout=10.0)
+                        fb = self._web_feedback(drv, timeout=10.0,
+                                                base_posted=_base_posted)
                 except Exception:
                     pass
             if fb == "correct":
                 self._web_ok += 1
                 self._web_round_failed = False
+                self._web_hint = ""
+                self._web_hint_qno = 0
+                self._web_hint_part = ()
                 self._web_status(
                     f"灵梦：第 {self._web_question} 题答对了。（对 {self._web_ok} / 错 {self._web_fail}）", "ok")
                 if st_now.get("inDialog"):
@@ -5090,12 +5740,14 @@ class App:
                 if drv.dialog_next():
                     if self._web_next(drv, key):
                         return True
-                # 多小问：弹窗只有 OK -> 点掉；下一小问出现就继续，否则翻下一题
+                # 多小问：答对之后 Pearson 常常直接换出一个 `Continue`
+                # （下一问的题面已经在下面了）。先点它，别干等 15 秒。
+                if self._web_next(drv, key):
+                    return True
+                # 弹窗还挂着就点掉；下一小问出现就继续，否则翻下一题
                 self._web_dismiss(drv)
                 time.sleep(0.6)
-                if self._web_wait_change(drv, key, timeout=15):
-                    return True
-                if self._web_next(drv, key):
+                if self._web_wait_change(drv, key, timeout=12):
                     return True
                 if self._web_jump_next_unanswered(drv):
                     return True
@@ -5103,25 +5755,40 @@ class App:
                     f"灵梦：没有下一题了，全自动收工（对 {self._web_ok} / 错 {self._web_fail}）。", "ok")
                 return False
 
-            if fb == "incorrect":
+            # P1-2：partial（部分正确）以前会被 `good` 里的 correct 命中、
+            # 当成全对记上去。现在和「判错」走同一条重算路径，文案分开说。
+            if fb in ("incorrect", "partial"):
+                _is_partial = fb == "partial"
                 self._web_fail += 1
                 self._web_round_failed = True
                 fb_text = drv.feedback_text()
                 wrong = ("多选 " + ",".join(spec["choices"])) if spec.get("choices") else \
                     str(spec.get("values") or spec.get("value") or "")
                 self._web_prev.setdefault(key, set()).add(_sig)
-                tries = self._web_try.get(key, 0) + 1
-                self._web_try[key] = tries
-                self.q.put(("append", "ans", f"× 判错（第 {tries} 次）：{fb_text[:60]}\n", "err"))
+                # 重试次数按“题号 + 小问”记，不能按 _web_key：
+                # 填过答案后 field label 会变，key 必变，tries 会永远从 1 开始。
+                _try_key = (int(st_now.get("qno") or 0),
+                            tuple(st_now.get("part") or []))
+                tries = self._web_try.get(_try_key, 0) + 1
+                self._web_try[_try_key] = tries
+                _mark = "△ 部分正确" if _is_partial else "× 判错"
+                self.q.put(("append", "ans", f"{_mark}（第 {tries} 次）：{fb_text[:60]}\n", "err"))
                 drv.click_text(r"^\s*ok\s*$")
                 time.sleep(0.8)
                 if tries <= 2 and not st_now.get("inDialog"):
                     self._web_hint = (f"上一次填的答案是 【{wrong}】，被判错了。"
                                       f"题目给的提示是：【{fb_text[:120]}】。"
                                       "请换个思路重新计算，务必给出正确结果。")
+                    self._web_hint_qno = int(st_now.get("qno") or 0)
+                    self._web_hint_part = tuple(st_now.get("part") or [])
                     self._web_seen.discard(key)
-                    self._web_status(
-                        f"魔理沙：答错了，带着提示再算一次（第 {tries} 次重试）…", "warn")
+                    if _is_partial:
+                        self._web_status(
+                            f"魔理沙：只拿了个部分正确，带着提示再算一次（第 {tries} 次重试）…",
+                            "warn")
+                    else:
+                        self._web_status(
+                            f"魔理沙：答错了，带着提示再算一次（第 {tries} 次重试）…", "warn")
                     return True
                 if not self._web_continue_wrong:
                     self._web_status(
@@ -5267,17 +5934,44 @@ class App:
             self._status(str(e), "err")
 
     # ------------------------------------------------------------------ 消息泵
+    def _pump_error(self, ev: tuple, exc: Exception) -> None:
+        """单个事件处理失败：记一笔账，别让它带走整台消息泵。
+
+        灵梦：一张符卡糊了，就换下一张——总不能让整台泵跟着停摆吧。
+        """
+        try:
+            kind = ev[0] if ev else "?"
+        except Exception:
+            kind = "?"
+        _boot_log(f"pump event={kind!r} failed: {exc!r}")
+
     def _pump(self) -> None:
+        """消息泵：把工作线程丢进队列的事件一张张收下来。
+
+        P1-9：以前 `self.root.after(45, ...)` 写在函数末尾、不在 finally 里，
+        任何一个事件抛异常（比如某个窗口已经销毁）都会让重排被跳过——
+        从此状态栏、busy、通知、剪贴板全部不再处理，界面看着还活着其实已经死了。
+        现在：单个事件失败只记账，重排放进 finally，泵不会停。
+        """
         try:
             for _ in range(500):
-                self._handle(self.q.get_nowait())
-        except queue.Empty:
-            pass
-        try:
-            self._maybe_apply_pending_theme()
-        except Exception:
-            pass
-        self.root.after(45, self._pump)
+                try:
+                    ev = self.q.get_nowait()
+                except queue.Empty:
+                    break
+                try:
+                    self._handle(ev)
+                except Exception as exc:
+                    self._pump_error(ev, exc)
+            try:
+                self._maybe_apply_pending_theme()
+            except Exception:
+                pass
+        finally:
+            try:
+                self.root.after(45, self._pump)
+            except tk.TclError:
+                pass
 
     def _handle(self, ev: tuple) -> None:
         kind = ev[0]
@@ -5320,6 +6014,8 @@ class App:
             self._do_notify(*ev[1:8])
         elif kind == "update_result":
             self._on_update_result(ev[1], ev[2], ev[3])
+        elif kind == "barrier_closed":
+            self._on_barrier_closed(ev[1], ev[2] if len(ev) > 2 else 0)
         elif kind == "clip_image":
             self._on_clip_image(ev[1])
         elif kind == "hotkey":
@@ -5336,16 +6032,95 @@ class App:
             txt.configure(state="normal")
         if self._placeholder_only(panel):
             txt.delete("1.0", "end")
+        # 答案正文单独攒一份：等这一轮说完，再整段换成「带公式图」的版本。
+        # （紫：边写边排版容易把半句公式切坏，等落笔了再誊清。）
+        if panel == "ans" and tag == "body":
+            if not self._ans_body:
+                self._ans_body_start = txt.index("end-1c")
+            self._ans_body += text
         txt.insert("end", text, tag)
         txt.see("end")
         if panel != "src":
             txt.configure(state="disabled")
         self._refresh_scrollbar(panel)
 
+    @staticmethod
+    def _needs_math_img(text: str) -> bool:
+        """只有含分式 / 根号 / 矩阵的答案才值得重排成图。
+
+        帕秋莉：`\\frac{1}{2}` 写成 `1/2` 也读得懂；但 `(1 2)(3 4)` 这种
+        矩阵字面写法，得排成真正的矩阵才对得上题面。
+        """
+        return bool(re.search(r"\\frac|\\dfrac|\\tfrac|\\sqrt|\\begin\{", text or ""))
+
+    def _beautify_ans(self) -> None:
+        """把答案里已经写完的分式/根号/矩阵换成真正的排版图。
+
+        流式阶段仍然吐纯文本（半句公式排不了）；等这一轮落笔，再整段誊清。
+        任何一步失败都只是「保持纯文本」，绝不能让答案消失。
+
+        注意要拿**模型原文**（`self.last_answer`），不是面板里已经转换过的文本：
+        面板里的 `\\frac{1}{2}` 早就被转成 `1/2` 了，再排也排不出分式。
+        """
+        raw = (self.last_answer or "").strip()
+        if not raw or raw == self._ans_rendered_for:
+            # 追问会再走一次 busy=False，同一条答案不要重复誊清（会把追问内容冲掉）
+            return
+        if not self._needs_math_img(raw):
+            return
+        txt = self.panels.get("ans")
+        if txt is None or not self._ans_body_start:
+            return
+        try:
+            from modules import mathimg as _mi
+
+            shown, images = _mi.render(raw, font_px=15, ink=C["text"],
+                                       bg=txt.cget("bg"), font_path=None)
+        except Exception as exc:
+            _boot_log(f"mathimg render failed: {exc!r}")
+            return
+        if not images:
+            return
+        self._ans_rendered_for = raw
+        try:
+            txt.configure(state="normal")
+            txt.delete(self._ans_body_start, "end")
+            photos = []
+            for chunk, idx in _mi.split_placeholders(shown):
+                if idx is None:
+                    if not chunk:
+                        continue
+                    # 文本段还要过一遍显示转换：`(x-2)^{2}` → `(x-2)²`、`\le` → `≤`。
+                    # （只把分式/根号/矩阵抠成图，剩下的字照旧要读得懂。）
+                    try:
+                        chunk = latex.latex_to_text(chunk)
+                    except Exception:
+                        pass
+                    txt.insert("end", chunk, "body")
+                    continue
+                try:
+                    photo = ImageTk.PhotoImage(images[idx])
+                except Exception:
+                    continue
+                photos.append(photo)
+                txt.image_create("end", image=photo, padx=2, pady=2)
+            txt.see("end")
+            txt.configure(state="disabled")
+            # 必须留着引用，否则 Tk 会把图片回收成一片空白
+            self._ans_photos = photos
+            self._refresh_scrollbar("ans")
+        except Exception as exc:
+            _boot_log(f"mathimg insert failed: {exc!r}")
+
     def _clear_panel(self, panel: str) -> None:
         txt = self.panels.get(panel)
         if txt is None:
             return
+        if panel == "ans":
+            self._ans_body = ""
+            self._ans_body_start = "1.0"
+            self._ans_photos = []
+            self._ans_rendered_for = ""
         if panel != "src":
             txt.configure(state="normal")
         txt.delete("1.0", "end")
@@ -5408,6 +6183,12 @@ class App:
             self.btn_capture.configure(state="disabled" if busy else "normal")
         except tk.TclError:
             pass
+        if not busy:
+            # 这一轮落笔了：把答案里的分式/根号/矩阵换成排版图
+            try:
+                self._beautify_ans()
+            except Exception as exc:
+                _boot_log(f"beautify failed: {exc!r}")
 
     def _status(self, text: str, level: str = "info") -> None:
         color = {"info": C["muted"], "ok": C["ok"], "warn": C["warn"], "err": C["err"]}.get(level, C["muted"])
@@ -5542,6 +6323,13 @@ def make_splash(root: tk.Tk) -> tuple[tk.Toplevel, object] | None:
     return top, photo
 
 
+def _license_badge(name: str, size: int):
+    """加载授权状态徽章；name 为 license_ok / license_no。"""
+    path = os.path.join(ASSETS, "license", f"{name}.png")
+    im = Image.open(path).convert("RGBA")
+    return ImageTk.PhotoImage(im.resize((size, size), Image.LANCZOS))
+
+
 def show_activation(root: tk.Tk, reason: str = "", allow_trial: bool = False) -> bool:
     """博麗神社的结界许可窗口（一机一码激活）。返回 True 表示已获得许可。"""
     from modules import clipboard
@@ -5552,7 +6340,7 @@ def show_activation(root: tk.Tk, reason: str = "", allow_trial: bool = False) ->
     win.title("博麗神社 · 结界许可")
     win.configure(bg=C["bg"])
     win.resizable(False, False)
-    w, h = 800, 640
+    w, h = 860, 760
     sw, sh = root.winfo_screenwidth(), root.winfo_screenheight()
     win.geometry(f"{w}x{h}+{max(0, (sw - w) // 2)}+{max(0, (sh - h) // 3)}")
     win.attributes("-topmost", True)
@@ -5560,10 +6348,22 @@ def show_activation(root: tk.Tk, reason: str = "", allow_trial: bool = False) ->
     result = {"ok": False}
     machine = lic.machine_code()
 
-    tk.Label(win, text="博麗神社 · 结界许可", bg=C["bg"], fg=C["gold"],
-             font=(F, 24, "bold")).pack(pady=(16, 0))
-    tk.Label(win, text="～ 无许可者，不得入内 ～", bg=C["bg"], fg=C["muted"],
-             font=(F, 11)).pack(pady=(2, 4))
+    try:
+        _lic_ok = bool(lic.status()[0])
+        logo = _license_badge("license_ok" if _lic_ok else "license_no", 150)
+        win._license_logo_ref = logo
+    except Exception:
+        logo = None
+    head = tk.Frame(win, bg=C["bg"])
+    head.pack(fill="x", padx=30, pady=(14, 0))
+    if logo is not None:
+        tk.Label(head, image=logo, bg=C["bg"], bd=0).pack(side="left", padx=(0, 14))
+    head_txt = tk.Frame(head, bg=C["bg"])
+    head_txt.pack(side="left", fill="x", expand=True)
+    tk.Label(head_txt, text="博麗神社 · 结界许可", bg=C["bg"], fg=C["gold"],
+             font=(F, 24, "bold"), anchor="w").pack(fill="x")
+    tk.Label(head_txt, text="～ 无许可者，不得入内 ～", bg=C["bg"], fg=C["muted"],
+             font=(F, 11), anchor="w").pack(fill="x", pady=(2, 0))
     tk.Label(win, text="灵梦：想借结界把作业退治掉？先拿一张许可来。",
              bg=C["bg"], fg=C["text"], font=(F, 10)).pack(pady=(0, 10))
 
@@ -5619,7 +6419,7 @@ def show_activation(root: tk.Tk, reason: str = "", allow_trial: bool = False) ->
                      insertbackground=C["text"], relief="flat", font=("Consolas", 11))
     entry.pack(fill="x", padx=34, ipady=7)
     tip.pack(anchor="w", padx=34, pady=(6, 0))
-    tk.Label(win, text="紫：五天的试用要是用完了，就得来神社登记咯。",
+    tk.Label(win, text="紫：三天的试用要是用完了，就得来神社登记咯。",
              bg=C["bg"], fg=C["muted"], font=(F, 9)).pack(anchor="w", padx=34, pady=(4, 0))
 
     def activate() -> None:
@@ -5643,7 +6443,18 @@ def show_activation(root: tk.Tk, reason: str = "", allow_trial: bool = False) ->
     def start_trial() -> None:
         from modules import license as lic
 
-        lic.start_trial()
+        try:
+            lic.start_trial()
+            state, msg, _days = lic.check_access(update=False)
+            if state not in ("trial", "licensed"):
+                raise RuntimeError(msg or "试用记录没有生效")
+        except Exception as e:
+            _boot_log(f"trial start failed: {e!r}")
+            try:
+                tip.configure(text=f"灵梦：试用结界没张开——{e}", fg=C["err"])
+            except Exception:
+                pass
+            return
         result["ok"] = True
         try:
             win.destroy()
@@ -5655,19 +6466,40 @@ def show_activation(root: tk.Tk, reason: str = "", allow_trial: bool = False) ->
               relief="flat", bd=0, padx=26, pady=7, cursor="hand2",
               font=(F, 11, "bold")).pack(side="right")
     if allow_trial:
-        tk.Button(btns, text="先试用 5 天", command=start_trial, bg=C["panel2"],
+        tk.Button(btns, text="先试用 3 天进入", command=start_trial, bg=C["panel2"],
                   fg=C["gold"], activebackground=C["accent_dark"], activeforeground="#ffffff",
                   relief="flat", bd=0, padx=18, pady=7, cursor="hand2",
                   font=(F, 10, "bold")).pack(side="right", padx=(0, 10))
-    tk.Button(btns, text="先回人间", command=win.destroy, bg=C["panel2"], fg=C["text"],
-              relief="flat", bd=0, padx=18, pady=7, cursor="hand2",
-              font=(F, 10)).pack(side="right", padx=(0, 10))
+    else:
+        def stay_without_trial() -> None:
+            # 没有可用试用时，不能把“先回人间”做成静默退出：
+            # 用户会以为它能进主界面。这里只解释原因，窗口继续留着。
+            try:
+                messagebox.showinfo(
+                    "结界许可",
+                    "这台机器目前没有可用试用，需要许可咒文才能进入主界面。\n"
+                    "可以粘贴激活码后再点「解开结界」。",
+                    parent=win,
+                )
+            except Exception:
+                pass
+
+        tk.Button(btns, text="先回人间", command=stay_without_trial,
+                  bg=C["panel2"], fg=C["text"],
+                  relief="flat", bd=0, padx=18, pady=7, cursor="hand2",
+                  font=(F, 10)).pack(side="right", padx=(0, 10))
     tk.Label(btns, text=f"符卡作业簿 v{settings.APP_VERSION} · MIT License",
              bg=C["bg"], fg=C["muted"], font=(F, 9)).pack(side="left")
 
+    def leave_or_trial() -> None:
+        if allow_trial:
+            start_trial()
+        else:
+            win.destroy()
+
     entry.bind("<Return>", lambda _e: activate())
     entry.focus_set()
-    win.protocol("WM_DELETE_WINDOW", win.destroy)
+    win.protocol("WM_DELETE_WINDOW", leave_or_trial)
     root.wait_window(win)
     return result["ok"]
 
@@ -5683,10 +6515,41 @@ def _boot_log(msg: str) -> None:
         pass
 
 
+def _code_stamp() -> str:
+    """在 boot.log 里记一笔「这次跑的是哪一版代码」。
+
+    灵梦：改完代码忘了重启，是这行字最想解决的问题——
+    以前只能靠猜，现在一眼就能看出跑的是不是刚改的那一份。
+    """
+    try:
+        _f = os.path.join(HERE, "app.pyw")
+        _m = time.strftime("%m-%d %H:%M:%S", time.localtime(os.path.getmtime(_f)))
+        _mods = []
+        for _n in ("web", "latex", "mathimg"):
+            _p = os.path.join(HERE, "modules", _n + ".py")
+            if os.path.exists(_p):
+                _mods.append(_n + "@" + time.strftime(
+                    "%H:%M:%S", time.localtime(os.path.getmtime(_p))))
+        return f"code app.pyw@{_m} " + " ".join(_mods)
+    except Exception:
+        return "code ?"
+
+
 def main() -> None:
     _ensure_assets()
+    from modules import single_instance
+
+    if not single_instance.begin():
+        if not single_instance.focus_existing():
+            try:
+                messagebox.showinfo(APP_TITLE, "符卡作业簿已经在运行，但暂时没找到它的窗口。\n"
+                                               "灵梦：门已经开着，别从窗户爬进来。")
+            except Exception:
+                pass
+        return
     capture.make_dpi_aware()
     capture.set_app_user_model_id("Shinichi.SpellCardHomework")
+    _boot_log(f"boot {_code_stamp()}")
 
     root = tk.Tk()
     root.withdraw()
@@ -5742,7 +6605,7 @@ def main() -> None:
                     pass
             _boot_log("show activation (fresh)")
             if not show_activation(
-                root, "灵梦：第一次来？可以先用五天，或者拿一张许可咒文来。",
+                root, "灵梦：第一次来？可以先用三天，或者拿一张许可咒文来。",
                 allow_trial=True,
             ):
                 try:
@@ -5791,6 +6654,10 @@ def main() -> None:
             root.destroy()
             return
         state["app"] = app
+        try:
+            single_instance.record_window(root)
+        except Exception:
+            pass
 
         # 双保险：没有许可/试用就绝不显示主界面
         try:
@@ -5847,6 +6714,17 @@ def main() -> None:
                 app._status(f"首次安装引导启动失败：{_fr_e}", "warn")
             except Exception:
                 pass
+        # 更新说明：已有用户在新版本首次启动时播放一次；
+        # 新用户/重装用户先完成契约与引路，再由 _on_onboarding_done 接手，
+        # 不能在启动这里提前 mark_seen，否则他们永远看不到本版说明。
+        try:
+            if _show_first:
+                app._pending_whats_new = True
+            else:
+                app.root.after(
+                    900, lambda: app.maybe_show_whats_new(config_existed))
+        except Exception as _wn_e:
+            _boot_log(f"whats new schedule failed: {_wn_e!r}")
         # 更新检查：首次安装/首启流程中完全跳过；之后每次启动只查一次。
         try:
             app._schedule_update_check(first_launch=bool(_show_first))

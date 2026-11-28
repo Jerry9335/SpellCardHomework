@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import os
+import queue
 import threading
 import tkinter as tk
 from tkinter import messagebox, ttk
@@ -58,6 +59,9 @@ _DEFAULT_MODELS = {
     "本地 LM Studio": ["local-model"],
 }
 
+# 灵梦：旧契约上写过的名字。名录里查无此人的话，就别再拿它当第一行。
+_LEGACY_DEFAULT_MODEL = "deepseek-flash"
+
 _ASSETS_FALLBACK = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets")
 
@@ -105,49 +109,32 @@ class SetupWizard(tk.Toplevel):
 
         self.step = 1
         self.provider = self._initial_provider()
-        self.base_url = self._base_for(self.provider)
+        saved_base = str(self.cfg.get("base_url") or "").strip()
+        # 帕秋莉：自定义的术式坐标不在书上的名录里；没点名换来源之前，就照原样留着。
+        self.base_url = saved_base or self._base_for(self.provider)
         self.api_key = str(self.cfg.get("api_key") or "")
+        # 安全：旧 Key 只用于“留空保留/测试”，绝不回填到输入框。
+        self._has_saved_key = bool(self.api_key)
+        self._clear_key = False
         self.models: list[str] = []
         self.model = str(self.cfg.get("model") or "")
         self.vision = str(self.cfg.get("vision_model") or "")
         self.api_skipped = False
         self._finished = False
         self._testing = False
+        # 咲夜：探查式神的结果先放在托盘上，由主厅按节拍取，侍从不准直接摆弄陈设。
+        self._test_queue: "queue.Queue[tuple]" = queue.Queue()
+        self._test_gen = 0
+        self._test_job = None
         self._avatar_refs: dict[str, object] = {}
 
         self.title("博麗神社 · 结界契约")
         self.configure(bg=self.bg)
+        # 契约与新手引导都走全屏无边框，完成后直接切引导，不闪回主界面。
+        self.overrideredirect(True)
         self.resizable(False, False)
-        # 首次安装时主窗口会先隐藏，此时不能做 transient 子窗口，
-        # 否则部分 Windows / 远程桌面会把契约窗口一起藏掉。
-        try:
-            if str(app.root.state()) != "withdrawn":
-                self.transient(app.root)
-        except Exception:
-            pass
         sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
-        # 用 Windows 工作区（排除任务栏）而不是整块屏幕，避免在小屏/缩放的 VM 上
-        # 窗口底部被任务栏裁掉，看起来像“契约页只显示了一部分”。
-        wx, wy, ww, wh = 0, 0, sw, sh
-        try:
-            import ctypes
-
-            class _Rect(ctypes.Structure):
-                _fields_ = [("left", ctypes.c_long), ("top", ctypes.c_long),
-                            ("right", ctypes.c_long), ("bottom", ctypes.c_long)]
-
-            _r = _Rect()
-            if ctypes.windll.user32.SystemParametersInfoW(
-                    48, 0, ctypes.byref(_r), 0):
-                wx, wy = int(_r.left), int(_r.top)
-                ww, wh = int(_r.right - _r.left), int(_r.bottom - _r.top)
-        except Exception:
-            pass
-        w = max(760, min(1180, ww - 40))
-        h = max(560, min(760, wh - 40))
-        x = wx + max(0, (ww - w) // 2)
-        y = wy + max(0, (wh - h) // 2)
-        self.geometry(f"{w}x{h}+{x}+{y}")
+        self.geometry(f"{sw}x{sh}+0+0")
         try:
             self.attributes("-topmost", True)
             self.grab_set()
@@ -164,23 +151,43 @@ class SetupWizard(tk.Toplevel):
 
     # ------------------------------------------------------------------ shell
     def _build_shell(self) -> None:
-        head = tk.Frame(self, bg=self.bg)
-        head.pack(fill="x", padx=26, pady=(22, 8))
+        # 全屏铺开，不做居中的窄卷轴；只留四周安全边距。
+        shell = tk.Frame(self, bg=self.bg)
+        shell.pack(fill="both", expand=True, padx=24, pady=18)
+
+        head = tk.Frame(shell, bg=self.bg)
+        head.pack(fill="x", pady=(10, 8))
         tk.Label(head, text="博麗神社 · 结界契约", bg=self.bg, fg=self.gold,
                  font=(self.F_TITLE, 24), anchor="w").pack(side="left")
         tk.Label(head, text="～ 以灵力为引，开一条退治之路 ～", bg=self.bg, fg=self.muted,
                  font=(self.F_UI, 10), anchor="w").pack(side="left", padx=(18, 0), pady=(8, 0))
         right = tk.Frame(head, bg=self.bg)
         right.pack(side="right")
+        tk.Button(right, text="先回人间", command=self._cancel,
+                  bg=self.panel2, fg=self.text, activebackground="#322a52",
+                  activeforeground=self.gold, relief="flat", bd=0,
+                  padx=12, pady=4, cursor="hand2",
+                  font=(self.F_UI, 9)).pack(side="right", padx=(12, 0))
         self.step_var = tk.StringVar(value="第 1 / 3 签")
         tk.Label(right, textvariable=self.step_var, bg=self.bg, fg=self.gold,
                  font=(self.F_UI, 10, "bold")).pack(side="left", padx=(0, 10))
         self.dots = tk.Canvas(right, width=58, height=16, bg=self.bg, highlightthickness=0)
         self.dots.pack(side="left")
 
-        body = tk.Frame(self, bg=self.bg)
-        body.pack(fill="both", expand=True, padx=26, pady=(4, 8))
-        self.left = tk.Frame(body, bg=self.panel, width=244, height=520)
+        # 底部先固定，正文吃剩余高度；全屏下按钮不会被挤出窗口。
+        foot = tk.Frame(shell, bg=self.bg)
+        foot.pack(side="bottom", fill="x", pady=(0, 8))
+        self.foot_left = tk.Frame(foot, bg=self.bg)
+        self.foot_left.pack(side="left")
+        self.foot_right = tk.Frame(foot, bg=self.bg)
+        self.foot_right.pack(side="right")
+        self.hint_var = tk.StringVar()
+        tk.Label(self.foot_left, textvariable=self.hint_var, bg=self.bg, fg=self.muted,
+                 font=(self.F_UI, 9), anchor="w").pack(side="left")
+
+        body = tk.Frame(shell, bg=self.bg)
+        body.pack(fill="both", expand=True, pady=(4, 8))
+        self.left = tk.Frame(body, bg=self.panel, width=244, height=680)
         self.left.pack(side="left", fill="y", padx=(0, 18))
         self.left.pack_propagate(False)
         right = tk.Frame(body, bg=self.bg)
@@ -207,16 +214,6 @@ class SetupWizard(tk.Toplevel):
         self.content.bind("<Configure>", self._sync_scroll_region)
         self._scroll.bind("<Configure>", self._sync_scroll_region)
         self.bind("<MouseWheel>", self._on_mousewheel)
-
-        foot = tk.Frame(self, bg=self.bg)
-        foot.pack(fill="x", padx=26, pady=(0, 18))
-        self.foot_left = tk.Frame(foot, bg=self.bg)
-        self.foot_left.pack(side="left")
-        self.foot_right = tk.Frame(foot, bg=self.bg)
-        self.foot_right.pack(side="right")
-        self.hint_var = tk.StringVar()
-        tk.Label(self.foot_left, textvariable=self.hint_var, bg=self.bg, fg=self.muted,
-                 font=(self.F_UI, 9), anchor="w").pack(side="left")
 
     def _sync_scroll_region(self, _event=None) -> None:
         """内容比可视区高时显示滚动条；否则隐藏，避免无意义的滚动槽。"""
@@ -285,7 +282,11 @@ class SetupWizard(tk.Toplevel):
             w.destroy()
 
     def _show_step(self, step: int) -> None:
+        previous = getattr(self, "step", 1)
         self.step = max(1, min(3, step))
+        if previous == 2 and self.step != 2:
+            # 紫：离开这一签就把缝隙合上，别让上一趟的探查结果飘回来。
+            self._cancel_test()
         self.step_var.set(f"第 {self.step} / 3 签")
         self._draw_dots()
         self._clear_content()
@@ -385,6 +386,9 @@ class SetupWizard(tk.Toplevel):
     def _choose_provider(self, name: str) -> None:
         self.provider = name
         self.base_url = self._base_for(name)
+        # 魔理沙：换了灵力来源，旧式神就不算数了，从这一家的名录头一位重挑。
+        self.models = []
+        self.model = self._default_model_for(name)
         self._paint_provider_selection()
 
     def _toggle_more(self) -> None:
@@ -405,6 +409,11 @@ class SetupWizard(tk.Toplevel):
                 return base
         return "https://api.deepseek.com/v1"
 
+    @staticmethod
+    def _default_model_for(name: str) -> str:
+        """慧音：每一家的名录第一行，就是这一家的正统式神。"""
+        return (_DEFAULT_MODELS.get(name) or [""])[0]
+
     # ------------------------------------------------------------------ page 2
     def _page_key(self) -> None:
         self._set_left("eirin", "八意永琳", "月之头脑",
@@ -418,12 +427,16 @@ class SetupWizard(tk.Toplevel):
         row = tk.Frame(self.content, bg=self.bg)
         row.pack(fill="x")
         self.key_entry = ttk.Entry(row, show="•", font=(self.F_UI, 10))
-        self.key_entry.insert(0, self.api_key)
+        # 旧密钥不显示；留空表示继续使用已封存的那一道。
         self.key_entry.pack(side="left", fill="x", expand=True, ipady=4)
         self._button(row, "粘贴", self._paste_key, width=6).pack(side="left", padx=(8, 0))
+        if self._has_saved_key:
+            self._button(row, "清除已存", self._clear_saved_key, width=8).pack(
+                side="left", padx=(6, 0))
 
         self.key_state = tk.StringVar(value=(
-            "符卡里已经封存了一道灵力；可以测试或换一道。" if self.api_key
+            "已封存一道灵力（不在界面显示）。留空保留；输入新密钥会替换，也可点「清除已存」。"
+            if self._has_saved_key
             else "尚未测试——建议先测一下，免得退治到一半灵力断了。"))
         self.key_state_lbl = tk.Label(self.content, textvariable=self.key_state,
                                       bg=self.panel, fg=self.muted, font=(self.F_UI, 9),
@@ -463,14 +476,28 @@ class SetupWizard(tk.Toplevel):
         if txt:
             self.key_entry.delete(0, "end")
             self.key_entry.insert(0, txt)
+            self._clear_key = False
             self.key_state.set("已从剪贴板贴入，记得测试一下。")
             self.key_state_lbl.configure(fg=self.muted)
 
+    def _clear_saved_key(self) -> None:
+        self._clear_key = True
+        self.api_key = ""
+        self._has_saved_key = False
+        self.key_entry.delete(0, "end")
+        self.key_state.set("已清除旧密钥；如果不需要 Key，可以直接跳过这一步。")
+        self.key_state_lbl.configure(fg=self.C["warn"] if hasattr(self, "C") else "#f2a65a")
+
     def _current_key(self) -> str:
         try:
-            return self.key_entry.get().strip()
+            entered = self.key_entry.get().strip()
         except Exception:
-            return self.api_key
+            entered = ""
+        if entered:
+            return entered
+        if self._clear_key:
+            return ""
+        return self.api_key if self._has_saved_key else ""
 
     def _is_local(self) -> bool:
         return self.provider.startswith("本地")
@@ -480,41 +507,107 @@ class SetupWizard(tk.Toplevel):
             return
         key = self._current_key()
         if not self._is_local() and not key:
-            self.key_state.set("还没有填 Key。可以填完再测，或者先跳过。")
-            self.key_state_lbl.configure(fg="#f2a65a")
+            self._set_key_state("还没有填通行密钥。可以填完再测，或者先跳过。", "#f2a65a")
             return
         self._testing = True
-        self.test_btn.configure(state="disabled")
-        self.key_state.set("灵力探查中……")
-        self.key_state_lbl.configure(fg=self.muted)
+        self._test_gen += 1
+        gen = self._test_gen
+        try:
+            self.test_btn.configure(state="disabled")
+        except Exception:
+            pass
+        self._set_key_state("灵力探查中……", self.muted)
         base = self.base_url
 
         def work():
+            # 咲夜：侍从只把托盘放下，不碰大厅里的任何陈设；取用由主厅按节拍来。
             try:
                 models = llm.list_models(base, key)
-                self.after(0, lambda: self._test_done(models, ""))
             except Exception as exc:
-                msg = str(exc)
-                self.after(0, lambda: self._test_done([], msg))
+                self._test_queue.put((gen, "err", str(exc)))
+                return
+            self._test_queue.put((gen, "ok", list(models or [])))
 
         threading.Thread(target=work, daemon=True).start()
+        try:
+            self._test_job = self.after(80, lambda g=gen: self._poll_test_result(g))
+        except Exception:
+            self._test_job = None
+            self._testing = False
+
+    def _poll_test_result(self, gen: int) -> None:
+        """咲夜：按拍子取托盘。节拍对不上，就把旧结果留在缝隙里。"""
+        self._test_job = None
+        if self._finished or gen != self._test_gen:
+            return
+        try:
+            item = self._test_queue.get_nowait()
+        except queue.Empty:
+            self._schedule_test_poll(gen)
+            return
+        try:
+            got_gen, kind, payload = item
+        except (TypeError, ValueError):
+            self._schedule_test_poll(gen)
+            return
+        if got_gen != gen:
+            self._schedule_test_poll(gen)
+            return
+        if kind == "ok":
+            self._test_done(list(payload or []), "")
+        else:
+            self._test_done([], str(payload or ""))
+
+    def _schedule_test_poll(self, gen: int) -> None:
+        try:
+            self._test_job = self.after(80, lambda g=gen: self._poll_test_result(g))
+        except Exception:
+            self._test_job = None
+
+    def _cancel_test(self) -> None:
+        """紫：这条缝隙先合上；旧结果再飘回来，也不认。"""
+        self._test_gen += 1
+        self._testing = False
+        job = self._test_job
+        self._test_job = None
+        if job is not None:
+            try:
+                self.after_cancel(job)
+            except Exception:
+                pass
+
+    def _set_key_state(self, text: str, color: str) -> None:
+        """慧音：写下批注前先看看这页还在不在，别往烧掉的纸上写字。"""
+        try:
+            if not self.winfo_exists():
+                return
+            label = getattr(self, "key_state_lbl", None)
+            if label is None or not label.winfo_exists():
+                return
+            self.key_state.set(text)
+            label.configure(fg=color)
+        except Exception:
+            pass
 
     def _test_done(self, models: list, err: str) -> None:
         self._testing = False
+        self._test_job = None
+        button = getattr(self, "test_btn", None)
         try:
-            self.test_btn.configure(state="normal")
+            if button is not None and button.winfo_exists():
+                button.configure(state="normal")
         except Exception:
             pass
         if err:
-            self.key_state.set(f"没接上：{err[:220]}\n可以再试，或者先跳过，之后在设置里补。")
-            self.key_state_lbl.configure(fg="#ff6b6b")
+            self._set_key_state(
+                f"没接上：{err[:220]}\n可以再试，或者先跳过，之后在设置里补。", "#ff6b6b")
         else:
             self.models = list(models or [])
             if self.models:
-                self.key_state.set(f"连通了。灵力很稳（看到 {len(self.models)} 个可用模型）。")
+                self._set_key_state(
+                    f"连通了。灵力很稳（看到 {len(self.models)} 个可用式神）。", "#7ed6a5")
             else:
-                self.key_state.set("连通了。灵力很稳。")
-            self.key_state_lbl.configure(fg="#7ed6a5")
+                self._set_key_state("连通了。灵力很稳。", "#7ed6a5")
 
     def _open_apply(self) -> None:
         try:
@@ -538,12 +631,11 @@ class SetupWizard(tk.Toplevel):
 
     # ------------------------------------------------------------------ page 3
     def _candidate_models(self) -> list[str]:
-        vals = list(self.models)
-        for m in _DEFAULT_MODELS.get(self.provider, []):
-            if m not in vals:
-                vals.append(m)
-        if self.model and self.model not in vals:
-            vals.insert(0, self.model)
+        # 帕秋莉：名录以书上的定式和实测到的为准，旧名字不强行塞到第一行。
+        vals: list[str] = []
+        for model in list(self.models) + list(_DEFAULT_MODELS.get(self.provider, [])):
+            if model and model not in vals:
+                vals.append(model)
         return vals
 
     def _page_models(self) -> None:
@@ -557,7 +649,9 @@ class SetupWizard(tk.Toplevel):
             fill="x", pady=(0, 18))
 
         values = self._candidate_models()
-        if not self.model:
+        if not self.model or (self.model == _LEGACY_DEFAULT_MODEL
+                              and self.model not in values):
+            # 灵梦：旧契约上的名字在名录里查无此人，就照这一家的头一位重写。
             self.model = values[0] if values else ""
         box1 = tk.Frame(self.content, bg=self.panel, padx=16, pady=14)
         box1.pack(fill="x", pady=(0, 12))
@@ -626,13 +720,14 @@ class SetupWizard(tk.Toplevel):
         if self._finished:
             return
         self._finished = True
+        self._cancel_test()
         if skip_setup:
             self.api_skipped = True
             result = {"skipped": True, "api_skipped": True}
         else:
             main, vis = self._collect_models()
             if not main:
-                main = (_DEFAULT_MODELS.get(self.provider) or [""])[0]
+                main = self._default_model_for(self.provider)
             result = {
                 "skipped": False,
                 "api_skipped": bool(self.api_skipped or not self.api_key),
@@ -659,9 +754,13 @@ class SetupWizard(tk.Toplevel):
                 self.cfg["base_url"] = result.get("base_url") or self.base_url
                 self.cfg["api_key"] = result.get("api_key", "")
                 self.cfg["model"] = result.get("model") or self.cfg.get("model") or "deepseek-chat"
-                self.cfg["vision_model"] = result.get("vision_model", "")
-                self.cfg["vision_base_url"] = ""
-                self.cfg["vision_api_key"] = ""
+                if "vision_model" in result:
+                    self.cfg["vision_model"] = result.get("vision_model", "")
+                # 慧音：读图坐标和读图密钥是另一册笔记；这次契约没问，就原样留着。
+                if "vision_base_url" in result:
+                    self.cfg["vision_base_url"] = result.get("vision_base_url") or ""
+                if "vision_api_key" in result:
+                    self.cfg["vision_api_key"] = result.get("vision_api_key") or ""
                 self.cfg["save_key"] = True
             self.app.cfg.update(self.cfg)
             settings.save(self.cfg)
@@ -672,9 +771,13 @@ class SetupWizard(tk.Toplevel):
         if self._finished:
             return
         if not messagebox.askyesno(
-                "结界契约", "现在离开，结界契约就作废了。\n要回人间吗？", parent=self):
+                "结界契约",
+                "现在离开，契约会先留着，不会关掉主程序。\n"
+                "之后可在「设置 → 神社登记 → 继续契约」里续。\n"
+                "要回人间吗？", parent=self):
             return
         self._finished = True
+        self._cancel_test()
         try:
             self.grab_release()
         except Exception:

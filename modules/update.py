@@ -1,9 +1,9 @@
-﻿"""检查更新：GitHub + Gitee 双渠道。
+"""检查更新：GitHub + Gitee 双渠道。
 
 返回统一结构：
     {
-        "version": "1.0.6-rc.04",  # 去掉 v 的版本号
-        "tag": "v1.0.6-rc.04",
+        "version": "1.1.7",  # 去掉 v 的版本号
+        "tag": "v1.1.7",
         "notes": "...",           # Release 说明（纯文本）
         "url": "https://...",     # Release 页面
         "download": "https://...",# 安装包地址（没有则同 url）
@@ -33,7 +33,7 @@ class UpdateError(RuntimeError):
 
 
 def parse_version(tag: str) -> tuple[int, ...]:
-    """'v1.0.6' -> (1, 0, 6)；解析失败返回空元组。只用于界面展示。"""
+    """'v1.1.7' -> (1, 1, 7)；解析失败返回空元组。只用于界面展示。"""
     m = re.search(r"(\d+(?:\.\d+)*)", str(tag or ""))
     if not m:
         return ()
@@ -47,8 +47,8 @@ _PRERELEASE_RANK = {"dev": 0, "alpha": 1, "a": 1, "beta": 2, "b": 2,
 def version_key(tag: str) -> tuple[int, ...]:
     """比较用的版本键：预发布版排在同号正式版之前。
 
-    '1.0.6-beta1' -> (1, 0, 6, 0, 2, 1)，'1.0.6' -> (1, 0, 6, 1)。
-    这样 beta1 既小于 1.0.6 正式版，也小于 beta2。
+    '1.1.7-beta1' -> (1, 1, 7, 0, 2, 1)，'1.1.7' -> (1, 1, 7, 1)。
+    这样 beta1 既小于 1.1.7 正式版，也小于 beta2。
     """
     s = str(tag or "").strip().lower()
     m = re.search(r"(\d+(?:\.\d+)*)(?:[-._ ]?(dev|alpha|a|beta|b|pre|preview|rc)\.?\s*(\d+)?)?", s)

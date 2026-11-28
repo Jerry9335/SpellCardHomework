@@ -6,7 +6,10 @@ import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
-os.environ["SHINICHI_CONFIG_DIR"] = tempfile.mkdtemp(prefix="sch_long_")
+sys.path.insert(0, HERE)
+from sch_testenv import enable  # noqa: E402
+
+enable(prefix="sch_long_")
 sys.path.insert(0, ROOT)
 
 import tkinter as tk

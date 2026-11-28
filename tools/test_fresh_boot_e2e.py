@@ -18,6 +18,8 @@ sys.path.insert(0, ROOT)
 tmp = tempfile.mkdtemp(prefix="sch_fresh_boot_")
 os.environ["APPDATA"] = tmp
 os.environ["LOCALAPPDATA"] = os.path.join(tmp, "local")
+# 这是一个独立的测试实例；正式单实例会把它当成第二个窗口。
+os.environ["SHINICHI_ALLOW_MULTI"] = "1"
 
 import app  # noqa: E402
 from modules import license as lic  # noqa: E402

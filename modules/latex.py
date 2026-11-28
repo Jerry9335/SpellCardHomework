@@ -8,8 +8,6 @@
 from __future__ import annotations
 import re
 
-import re
-
 GREEK = {
     "alpha": "α", "beta": "β", "gamma": "γ", "delta": "δ", "epsilon": "ε", "varepsilon": "ε",
     "zeta": "ζ", "eta": "η", "theta": "θ", "vartheta": "ϑ", "iota": "ι", "kappa": "κ",
@@ -96,6 +94,46 @@ def _arg(s: str, i: int) -> tuple[str, int]:
         j = _match(s, i)
         return s[i + 1:j], j + 1
     return s[i], i + 1
+
+
+def _read_group(s: str, i: int) -> tuple[str | None, int]:
+    """帕秋莉：从 s[i] 的 '{' 读到配对的 '}'；不完整就返回 (None, i)。"""
+    if i >= len(s) or s[i] != "{":
+        return None, i
+    depth = 0
+    j = i
+    while j < len(s):
+        c = s[j]
+        if c == "\\":
+            j += 2
+            continue
+        if c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+            if depth == 0:
+                return s[i + 1:j], j + 1
+        j += 1
+    return None, i
+
+
+def _read_token(s: str, i: int) -> tuple[str | None, int, bool]:
+    """读一个公式参数：{...}、反斜杠命令或单个字符。
+
+    返回 (内容, 新位置, 是否带花括号)；读不完整返回 (None, i, False)。
+    """
+    while i < len(s) and s[i] in " \t":
+        i += 1
+    if i >= len(s):
+        return None, i, False
+    if s[i] == "{":
+        body, j = _read_group(s, i)
+        return (body, j, True) if body is not None else (None, i, False)
+    if s[i] == "\\":
+        m = re.match(r"\\[A-Za-z]+", s[i:])
+        if m:
+            return m.group(0), i + len(m.group(0)), False
+    return s[i], i + 1, False
 
 
 def _script(text: str, table: dict[str, str]) -> str:
@@ -245,6 +283,54 @@ def latex_to_text(text: str) -> str:
     return _bare_commands(text)
 
 
+def _prefix_ready(s: str) -> bool:
+    """咲夜：这个前缀是否已经是一个能独立转换的完整公式片段。
+
+    不完整的花括号、frac/sqrt 参数、begin/end 环境都先扣着，别急着说出去，
+    否则后续文字一到，前面说出去的话就改不回来了。
+    """
+    depth = 0
+    i = 0
+    while i < len(s):
+        c = s[i]
+        if c == "\\":
+            i += 2
+            continue
+        if c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+            if depth < 0:
+                return False
+        i += 1
+    if depth:
+        return False
+    if (len(re.findall(r"\\begin\s*\{", s))
+            != len(re.findall(r"\\end\s*\{", s))):
+        return False
+    for m in re.finditer(r"\\(?:d|t)?frac", s):
+        i = m.end()
+        for _ in range(2):
+            a, i, _bra = _read_token(s, i)
+            if a is None:
+                return False
+    for m in re.finditer(r"\\sqrt", s):
+        i = m.end()
+        if s[i:i + 1] == "[":
+            j = s.find("]", i)
+            if j < 0:
+                return False
+            i = j + 1
+        a, i, _bra = _read_token(s, i)
+        if a is None:
+            return False
+    # 模型漏写反斜杠的伪 LaTeX（sqrt{...}/frac{...}）先扣着，等它长成真命令。
+    if ("\\" not in s and "$" not in s
+            and re.search(r"(?<![A-Za-z])(?:frac|sqrt)\s*\{", s)):
+        return False
+    return True
+
+
 class MathStream:
     """流式转换：按「分隔符」切段，整段转换后只吐出新增部分。
 
@@ -301,23 +387,38 @@ class MathStream:
         if limit <= self.HOLD:
             return ""
         spans = self._spans(self.buf[:limit])
+        full = latex_to_text(self.buf)
         cut = -1
         for i in range(limit - 1, self.HOLD - 1, -1):
             if self.buf[i] not in self.DELIMS:
                 continue
             if any(a < i < b for a, b in spans):
                 continue
-            cut = i + 1
+            cand = i + 1
+            prefix = self.buf[:cand]
+            # 咲夜：只把“完整且当前全文确实是它延长”的那段先说出来。
+            if not _prefix_ready(prefix):
+                continue
+            converted = latex_to_text(prefix)
+            if not full.startswith(converted):
+                continue
+            cut = cand
             break
         if cut <= 0:
             return ""
         converted = latex_to_text(self.buf[:cut])
+        if not converted.startswith(self.emitted):
+            return ""
         delta = converted[len(self.emitted):]
         self.emitted = converted
         return delta
 
     def flush(self) -> str:
         converted = latex_to_text(self.buf)
+        if not converted.startswith(self.emitted):
+            # 已经吐出去的话收不回来；宁可不再补错字，等下次读题重来。
+            self.buf = ""
+            return ""
         delta = converted[len(self.emitted):]
         self.emitted = converted
         self.buf = ""
@@ -340,7 +441,8 @@ _EDITOR_MAP = {
 }
 
 _EDITOR_CMD = {
-    "infty": r"\inf", "infinity": r"\inf", "cup": r"\cup", "cap": r"\cap",
+    "infty": r"\inf", "infinity": r"\inf", "inf": r"\inf",
+    "cup": r"\cup", "cap": r"\cap",
     "emptyset": r"\empty", "varnothing": r"\empty", "pi": r"\pi",
     "le": "<=", "leq": "<=", "ge": ">=", "geq": ">=", "ne": "<>", "neq": "<>",
     "times": r"\times", "div": r"\divide", "cdot": "*", "pm": "+-",
@@ -354,68 +456,450 @@ _EDITOR_CMD = {
 
 _SIMPLE = re.compile(r"^[A-Za-z0-9.]+$")
 
+# 函数名后面那个空格是**语义分隔**，不能跟着空白一起被删掉。
+# 帕秋莉：`sin 2x` 去掉空格就成了 `sin2x`，编辑器会把它读成一个变量名 ——
+# 一个空格之差，函数就变成了未知符号。所以先换成哨兵，最后再还回来。
+_FUNC_GAP = "\x00"
+
+# 会被「去空白」误伤的函数名（它们后面那个空格是语义分隔）
+_FUNC_NAME_RE = re.compile(
+    r"(?<![A-Za-z\\])(sin|cos|tan|cot|sec|csc|arcsin|arccos|arctan|"
+    r"sinh|cosh|tanh|log|ln|lim|max|min|det|gcd|lcm|exp)"
+    r"(?![A-Za-z])([ \t]+)?"
+)
+
+
+def _protect_func_gap(s: str) -> str:
+    """把函数名后面的空格换成哨兵，等去完空白再还原。
+
+    帕秋莉：`sin 2x` 一旦被压成 `sin2x`，编辑器会当成一个变量名，
+    函数就凭空消失了。这种「一个空格之差」的错最难查。
+    """
+    return _FUNC_NAME_RE.sub(
+        lambda m: m.group(1) + (_FUNC_GAP if m.group(2) else ""), s)
+
+# `\log` / `\ln`：编辑器里**没有这两个命令**。
+# 写 `\log` 会插进一个字面反斜杠（真页面 A/B 实测过），括号还会被当成乘号。
+# 唯一正确的写法是 `log_6 p`（无反斜杠、括号只用于分组）。
+# （灵梦：叫人家名字的时候别带口音，不然对面听不懂你是谁。）
+_LOG_PAT = re.compile(r"\\(log|ln)(?![A-Za-z])[ \t]*")
+
+# n 次根：编辑器不认 `\sqrt[4]{2}`，会填成「对 [4] 开平方再乘 (2)」——
+# 看着像根号，其实整题全错。一律改写成指数 `(2)^(1/4)`。
+_NTH_ROOT_PAT = re.compile(r"\\sqrt[ \t]*\[[ \t]*([^\]]*?)[ \t]*\][ \t]*")
+
+
+def _editor_nth_root(s: str) -> str:
+    """\\sqrt[n]{x} → (x)^(1/n)。
+
+    帕秋莉：四次根不是「根号里写个 4」，那是「先对 4 开平方、再乘后面的东西」。
+    既然编辑器不认 n 次根，就用指数写法把这层意思说清楚。
+    """
+    out: list[str] = []
+    pos = 0
+    while True:
+        m = _NTH_ROOT_PAT.search(s, pos)
+        if not m:
+            out.append(s[pos:])
+            break
+        out.append(s[pos:m.start()])
+        idx = (m.group(1) or "").strip() or "2"
+        a, p, _bra = _read_token(s, m.end())
+        if a is None:
+            out.append(m.group(0))
+            pos = m.end()
+            continue
+        aa = _editor_nth_root(a)
+        out.append("(" + aa + ")^(1/" + idx + ")")
+        pos = p
+    return "".join(out)
+
+
+def _editor_log(s: str) -> str:
+    """把 \\log / \\ln 改写成编辑器认的 `log_6 p` / `ln x` 形式。
+
+    规则（都是真页面实测换来的）：
+    - 底数用下划线：`\\log_{6}(p)` → `log_6 p`；
+    - 参数是单个字符时直接跟空格：`ln x`；
+    - 参数是括号/花括号包起来的，保留括号分组：`ln (2x+1)`；
+    - 参数是裸写的一串（`\\ln 2x`），原样跟空格 —— 千万别给它加括号，
+      编辑器会把括号当乘号；
+    - 函数名和参数之间那个空格用哨兵占住，别让后面的去空白步骤吃掉。
+    """
+    out: list[str] = []
+    pos = 0
+    while True:
+        m = _LOG_PAT.search(s, pos)
+        if not m:
+            out.append(s[pos:])
+            break
+        out.append(s[pos:m.start()])
+        name = m.group(1)
+        i = m.end()
+        sub = ""
+        if s[i:i + 1] == "_":
+            i += 1
+            if s[i:i + 1] == "{":
+                j = s.find("}", i)
+                if j < 0:
+                    out.append(m.group(0))
+                    pos = m.end()
+                    continue
+                sub = s[i + 1:j].strip()
+                i = j + 1
+            elif s[i:i + 1] == "(":
+                j = s.find(")", i)
+                if j < 0:
+                    out.append(m.group(0))
+                    pos = m.end()
+                    continue
+                sub = s[i + 1:j].strip()
+                i = j + 1
+            else:
+                j = i
+                while j < len(s) and s[j].isalnum():
+                    j += 1
+                sub = s[i:j]
+                i = j
+        while i < len(s) and s[i] in " \t":
+            i += 1
+        grouped = False
+        expr = ""
+        if i < len(s) and s[i] in "({":
+            opener, closer = s[i], ("}" if s[i] == "{" else ")")
+            depth = 0
+            j = i
+            while j < len(s):
+                if s[j] == opener:
+                    depth += 1
+                elif s[j] == closer:
+                    depth -= 1
+                    if depth == 0:
+                        break
+                j += 1
+            if j >= len(s):
+                out.append(m.group(0))
+                pos = m.end()
+                continue
+            grouped = True
+            expr = s[i + 1:j]
+            i = j + 1
+        elif i < len(s):
+            j = i
+            while j < len(s) and s[j] not in " \t+-*/^=,;":
+                j += 1
+            expr = s[i:j]
+            i = j
+        head = name + (("_" + sub) if sub else "")
+        if not expr:
+            out.append(head)
+            pos = i
+            continue
+        if len(expr) == 1 and expr.isalnum():
+            arg = expr
+        elif grouped:
+            arg = "(" + expr + ")"
+        elif re.search(r"[\\^_/]", expr):
+            # 裸写的参数里有命令/分式，必须包起来才不歧义
+            arg = "(" + expr + ")"
+        else:
+            arg = expr
+        out.append(head + _FUNC_GAP + arg)
+        pos = i
+    return "".join(out)
+
+
+def _paste_log(s: str) -> str:
+    """粘贴层的 log/ln：写成常规数学写法 `log_6(p)`，不要留反斜杠。"""
+    out: list[str] = []
+    pos = 0
+    while True:
+        m = _LOG_PAT.search(s, pos)
+        if not m:
+            out.append(s[pos:])
+            break
+        out.append(s[pos:m.start()])
+        name = m.group(1)
+        i = m.end()
+        sub = ""
+        if s[i:i + 1] == "_":
+            i += 1
+            if s[i:i + 1] == "{":
+                j = s.find("}", i)
+                if j < 0:
+                    out.append(m.group(0))
+                    pos = m.end()
+                    continue
+                sub = s[i + 1:j].strip()
+                i = j + 1
+            else:
+                j = i
+                while j < len(s) and s[j].isalnum():
+                    j += 1
+                sub = s[i:j]
+                i = j
+        while i < len(s) and s[i] in " \t":
+            i += 1
+        expr = ""
+        if i < len(s) and s[i] in "({":
+            opener, closer = s[i], ("}" if s[i] == "{" else ")")
+            depth = 0
+            j = i
+            while j < len(s):
+                if s[j] == opener:
+                    depth += 1
+                elif s[j] == closer:
+                    depth -= 1
+                    if depth == 0:
+                        break
+                j += 1
+            if j >= len(s):
+                out.append(m.group(0))
+                pos = m.end()
+                continue
+            expr = s[i + 1:j]
+            i = j + 1
+        elif i < len(s):
+            j = i
+            while j < len(s) and s[j] not in " \t+-*/^=,;":
+                j += 1
+            expr = s[i:j]
+            i = j
+        head = name + (("_" + sub) if sub else "")
+        out.append(head + "(" + expr + ")" if expr else head)
+        pos = i
+    return "".join(out)
+
 
 def _editor_frac(s: str) -> str:
-    pat = re.compile(r"\\(?:d|t)?frac\{([^{}]*)\}\{([^{}]*)\}")
-    while True:
-        def rep(m):
-            a, b = m.group(1).strip(), m.group(2).strip()
-            if _SIMPLE.match(a) and _SIMPLE.match(b):
-                return f"{a}/{b}"
-            return f"({a})/({b})"
+    """咲夜：把公式书里的 frac 拆成 Pearson 编辑器认得的 a/b。
 
-        new = pat.sub(rep, s)
-        if new == s:
-            return s
-        s = new
+    参数用括号配对扫描，不再用 [^{}]*；这样 \\frac{x^{2}}{2} 这类嵌套也能
+    正确拆开。分数后面紧跟字母/数字时加括号，避免 1/2x 被读成 1/(2x)。
+    """
+    pat = re.compile(r"\\(?:d|t)?frac\s*")
+    out: list[str] = []
+    pos = 0
+    while True:
+        m = pat.search(s, pos)
+        if not m:
+            out.append(s[pos:])
+            break
+        out.append(s[pos:m.start()])
+        a, p, _bra = _read_token(s, m.end())
+        b = None
+        if a is not None:
+            b, p, _bra2 = _read_token(s, p)
+        if a is None or b is None:
+            out.append(m.group(0))
+            pos = m.end()
+            continue
+        aa = _editor_frac(a)
+        bb = _editor_frac(b)
+        na = aa if _SIMPLE.match(aa) else f"({aa})"
+        nb = bb if _SIMPLE.match(bb) else f"({bb})"
+        nxt = s[p:p + 1]
+        if nxt and (nxt.isalnum() or nxt in "\\("):
+            out.append(f"({aa})/({bb})")
+        else:
+            out.append(f"{na}/{nb}")
+        pos = p
+    return "".join(out)
+
+
+def _read_paren(s: str, i: int) -> tuple[str | None, int]:
+    """读一个括号参数 `(...)`：返回 (内容, 新位置)；不配对返回 (None, i)。
+
+    帕秋莉：`_read_token` 只认花括号和单字符。可 log/n 次根这些规则会把参数
+    写成圆括号，回头再进分式/根号就没人接得住了。
+    """
+    while i < len(s) and s[i] in " \t":
+        i += 1
+    if i >= len(s) or s[i] != "(":
+        return None, i
+    depth = 0
+    j = i
+    while j < len(s):
+        if s[j] == "(":
+            depth += 1
+        elif s[j] == ")":
+            depth -= 1
+            if depth == 0:
+                return s[i + 1:j], j + 1
+        j += 1
+    return None, i
 
 
 def _editor_sqrt(s: str) -> str:
-    pat = re.compile(r"\\sqrt\{([^{}]*)\}")
+    """咲夜：\\sqrt{...} 转成编辑器命令；参数同样用括号配对扫描。"""
+    pat = re.compile(r"\\sqrt\s*")
+    out: list[str] = []
+    pos = 0
     while True:
-        def rep(m):
-            a = m.group(1).strip()
-            return r"\sqrt" + a if re.match(r"^[A-Za-z0-9.]$", a) else r"\sqrt(" + a + ")"
+        m = pat.search(s, pos)
+        if not m:
+            out.append(s[pos:])
+            break
+        out.append(s[pos:m.start()])
+        i = m.end()
+        if s[i:i + 1] == "[":
+            # n 次根已经在上一步被换成指数写法了；真的漏到这里就原样留着
+            out.append(m.group(0))
+            pos = i
+            continue
+        # 参数可能是 `{...}`（LaTeX 写法），也可能是 `(...)`（我们自己上一步写出来的）
+        a = None
+        p = i
+        if s[i:i + 1] == "(":
+            a, p = _read_paren(s, i)
+        if a is None:
+            a, p, _bra = _read_token(s, i)
+        if a is None:
+            out.append(m.group(0))
+            pos = i
+            continue
+        aa = _editor_sqrt(a)
+        # 一律写成 `\sqrt(...)`：这是真页面验证过的形式。
+        # 帕秋莉：`\sqrt3` 这种省括号的写法只在逐字敲的时候成立；整段插进去时
+        # 编辑器不一定把 3 收进根号里，宁可多写一对括号。
+        out.append(r"\sqrt(" + aa + ")")
+        pos = p
+    return "".join(out)
 
-        new = pat.sub(rep, s)
-        if new == s:
-            return s
-        s = new
+
+def _fix_log_base(text: str) -> str:
+    """把 `log7(5)` 修成编辑器认的 `log_7(5)`。
+
+    模型经常省掉下划线；Pearson 的公式编辑器会把 `log7` 解释成
+    “log × 7”，于是 `log7(5)+log7(k)` 看起来对、Check 却判错
+    （2026-11-28 Q10 Part 2 实测）。只处理“log + 数字 + 左括号”，
+    不动已经带下划线、或 `log(x)` 这种无底数写法。
+    """
+    return re.sub(r"\b(log)\s*(\d+)\s*(?=\()", r"\1_\2", text, flags=re.I)
 
 
 def to_editor_input(text: str) -> str:
     """把模型答案转成 Pearson 公式编辑器能识别的输入串。
 
     - ∞ -> \\inf，∪ -> \\cup，≤ -> <=，≠ -> <>
-    - \\frac{a}{b} -> a/b（真分数），\\sqrt{3} -> \\sqrt3
+    - \\log_{b}(x) -> log_b x（编辑器没有 \\log 命令，见 `_editor_log`）
+    - \\sqrt[n]{x} -> (x)^(1/n)（编辑器不认 n 次根）
+    - \\frac{a}{b} -> a/b（真分数），\\sqrt{3} -> \\sqrt(3)
     - x^{n+1} -> x^(n+1)，x^2 保持 ^ 形式
     """
     if not text:
         return ""
     s = text.strip().replace("$", "")
+    s = s.replace("−", "-").replace("–", "-").replace("—", "-")
     s = s.replace("\\left", "").replace("\\right", "")
-    s = _editor_frac(s)
-    s = _editor_sqrt(s)
+    s = _fix_log_base(s)
+    # 咲夜：先处理 log/ln 和 n 次根——它们的参数里可能还套着分式，顺序反了就拆不开。
+    s = _editor_log(s)
+    s = _editor_nth_root(s)
+    # 咲夜：再把上标/下标拆成括号，然后处理根号和分式，嵌套才不会互相绊脚。
     s = re.sub(r"\^\{([^{}]*)\}", lambda m: "^(" + m.group(1) + ")", s)
     s = re.sub(r"_\{([^{}]*)\}", lambda m: "_(" + m.group(1) + ")", s)
+    s = _editor_sqrt(s)
+    s = _editor_frac(s)
+    # 分式/根号内部可能还有一层上标，再补一次。
+    s = re.sub(r"\^\{([^{}]*)\}", lambda m: "^(" + m.group(1) + ")", s)
+    # 负指数/负分母必须加括号；指数只吃一个 token，不能跨过隐式乘法。
+    s = re.sub(r"\^(-)(\d+(?:\.\d+)?|[A-Za-z])", r"^(-\2)", s)
+    s = re.sub(r"/(-)(\d+(?:\.\d+)?|[A-Za-z])", r"/(-\2)", s)
+    s = re.sub(r"\\(?:text|textrm|mathrm|operatorname|mbox)\{([^{}]*)\}", r"\1", s)
     s = re.sub(r"\\([A-Za-z]+)", lambda m: _EDITOR_CMD.get(m.group(1), m.group(1)), s)
     s = re.sub(r"\\[^A-Za-z]", "", s)
     s = "".join(_EDITOR_MAP.get(ch, ch) for ch in s)
+    # 函数名后面那个空格是语义分隔，先换成哨兵，别让去空白步骤吃掉。
+    s = _protect_func_gap(s)
     if re.search(r"[0-9()+\-*/^<>=,]", s):
         s = re.sub(r"\s+", "", s)
-    return s
+    return s.replace(_FUNC_GAP, " ")
 
 
 _PASTE_CMD = {
     "infty": "∞", "infinity": "∞", "inf": "∞", "cup": "∪", "cap": "∩", "emptyset": "∅",
     "varnothing": "∅", "pi": "π", "le": "≤", "leq": "≤", "ge": "≥", "geq": "≥",
-    "ne": "≠", "neq": "≠", "times": "×", "div": "÷", "cdot": "·", "pm": "±",
-    "in": "∈", "notin": "∉", "subset": "⊂", "land": "∧", "lor": "∨", "neg": "¬",
-    "Delta": "Δ", "sum": "∑", "sqrt": "√", "alpha": "α", "beta": "β",
-    "gamma": "γ", "theta": "θ", "mu": "μ", "sigma": "σ", "lambda": "λ",
-    "omega": "ω", "left": "", "right": "", "quad": "", "qquad": "",
-    "displaystyle": "",
+    "ne": "≠", "neq": "≠", "approx": "≈", "equiv": "≡", "sim": "∼", "propto": "∝",
+    "times": "×", "div": "÷", "cdot": "·", "pm": "±",
+    "in": "∈", "notin": "∉", "subset": "⊂", "subseteq": "⊆", "supset": "⊃",
+    "land": "∧", "lor": "∨", "neg": "¬",
+    "Delta": "Δ", "sum": "∑", "prod": "∏", "int": "∫", "sqrt": "√",
+    "partial": "∂", "nabla": "∇", "angle": "∠", "perp": "⊥", "parallel": "∥",
+    "to": "→", "rightarrow": "→", "leftarrow": "←", "Rightarrow": "⇒",
+    "leftrightarrow": "↔", "mapsto": "↦",
+    "cdots": "⋯", "ldots": "…", "dots": "…",
+    "sin": "sin", "cos": "cos", "tan": "tan", "sec": "sec", "csc": "csc",
+    "cot": "cot", "arcsin": "arcsin", "arccos": "arccos", "arctan": "arctan",
+    "log": "log", "ln": "ln", "lim": "lim", "max": "max", "min": "min",
+    "sup": "sup", "det": "det", "exp": "exp", "gcd": "gcd", "lcm": "lcm",
+    "alpha": "α", "beta": "β", "gamma": "γ", "theta": "θ", "mu": "μ",
+    "sigma": "σ", "lambda": "λ", "omega": "ω", "phi": "φ", "rho": "ρ",
+    "tau": "τ", "epsilon": "ε",
+    "left": "", "right": "", "quad": "", "qquad": "", "displaystyle": "",
 }
+
+
+def _paste_sqrt(s: str) -> str:
+    """咲夜：粘贴层用的根号转换，支持 n 次根，参数用括号配对扫描。"""
+    pat = re.compile(r"\\sqrt\s*")
+    out: list[str] = []
+    pos = 0
+    while True:
+        m = pat.search(s, pos)
+        if not m:
+            out.append(s[pos:])
+            break
+        out.append(s[pos:m.start()])
+        i = m.end()
+        idx = ""
+        if s[i:i + 1] == "[":
+            j = s.find("]", i)
+            if j < 0:
+                out.append(m.group(0))
+                pos = i
+                continue
+            idx = s[i + 1:j]
+            i = j + 1
+        a, p, _bra = _read_token(s, i)
+        if a is None:
+            out.append(m.group(0))
+            pos = i
+            continue
+        aa = _paste_sqrt(a)
+        out.append((_script(idx, SUP) if idx else "") + "√(" + aa + ")")
+        pos = p
+    return "".join(out)
+
+
+def _paste_frac(s: str) -> str:
+    """咲夜：粘贴层的 \\frac{a}{b} → (a)/(b)；无花括号的 \\frac12 → 1/2。"""
+    pat = re.compile(r"\\(?:d|t)?frac\s*")
+    out: list[str] = []
+    pos = 0
+    while True:
+        m = pat.search(s, pos)
+        if not m:
+            out.append(s[pos:])
+            break
+        out.append(s[pos:m.start()])
+        a, p, bra_a = _read_token(s, m.end())
+        b = None
+        bra_b = False
+        if a is not None:
+            b, p, bra_b = _read_token(s, p)
+        if a is None or b is None:
+            out.append(m.group(0))
+            pos = m.end()
+            continue
+        aa = _paste_frac(a)
+        bb = _paste_frac(b)
+        if bra_a and bra_b:
+            out.append(f"({aa})/({bb})")
+        else:
+            out.append(f"{aa}/{bb}")
+        pos = p
+    return "".join(out)
 
 
 def to_paste_input(text: str) -> str:
@@ -423,16 +907,77 @@ def to_paste_input(text: str) -> str:
 
     Pearson 的编辑器在粘贴时会自己解析 ^ 和 /，但不认识 \\inf 这种命令，会原样显示。
     """
-    s = (text or "").strip()
+    s = (text or "").strip().replace("$", "")
     s = s.replace("−", "-").replace("–", "-").replace("—", "-")
-    s = re.sub(r"\\frac\{([^{}]*)\}\{([^{}]*)\}", lambda m: f"({m.group(1)})/({m.group(2)})", s)
-    s = re.sub(r"\\sqrt\{([^{}]*)\}", lambda m: "√(" + m.group(1) + ")", s)
+    s = s.replace("\\left", "").replace("\\right", "")
+    s = _fix_log_base(s)
+    # 咲夜：先收 log/ln，参数里可能还套着分式，顺序反了就拆不开。
+    s = _paste_log(s)
+    # 咲夜：先上标、再根号、最后分式；嵌套的根号和分式才不会被拆坏。
+    s = re.sub(r"\^\{([^{}]*)\}", r"^(\1)", s)
+    s = _paste_sqrt(s)
+    s = _paste_frac(s)
+    # 分式/根号内部可能还有一层上标，再补一次。
+    s = re.sub(r"\^\{([^{}]*)\}", r"^(\1)", s)
+    # 负指数/负分母必须加括号；指数只吃一个 token，不跨过隐式乘法。
+    s = re.sub(r"\^(-)(\d+(?:\.\d+)?|[A-Za-z])", r"^(-\2)", s)
+    s = re.sub(r"/(-)(\d+(?:\.\d+)?|[A-Za-z])", r"/(-\2)", s)
+    s = re.sub(r"\\(?:text|textrm|mathrm|operatorname|mbox)\{([^{}]*)\}", r"\1", s)
     s = re.sub(r"\\([A-Za-z]+)", lambda m: _PASTE_CMD.get(m.group(1), ""), s)
     s = re.sub(r"\\[^A-Za-z]", "", s)
     s = re.sub(r"(?<![A-Za-z])inf(?:inity)?(?![A-Za-z])", "∞", s)
+    # 函数名后的空格同样要保住（粘贴时压成 sin2x 也会被读成变量名）
+    s = _protect_func_gap(s)
     if re.search(r"[0-9()+\-*/^<>=,]", s):
         s = re.sub(r"\s+", "", s)
+    return s.replace(_FUNC_GAP, " ")
+
+def aria_to_plain(text: str) -> str:
+    """把 Pearson 的「朗读式」文本翻回数学写法。
+
+    帕秋莉：编辑器回读给我的不是公式，是**念出来的句子**——
+    `6500 equals 5000 left parenthesis 1 plus StartFraction r Over m EndFraction
+    right parenthesis Superscript left parenthesis 6 m right parenthesis`。
+    拿它跟原文比对永远不相等，于是明明填对了也会被判「没填进去」，
+    再退回粘贴、把结构搞坏。所以先翻译再比。
+    """
+    s = str(text or "").replace("\u200b", "")
+    # 分式：`StartFraction a Over b EndFraction` → `(a)/(b)`（多跑几轮，尽量吃掉嵌套）
+    for _ in range(3):
+        new = re.sub(r"StartFraction\s*(.*?)\s*Over\s*(.*?)\s*EndFraction",
+                     lambda m: "(" + m.group(1) + ")/(" + m.group(2) + ")",
+                     s, flags=re.S)
+        if new == s:
+            break
+        s = new
+    # 有些回读会把 EndFraction 省掉（分式正好在右括号前结束时就是这样）：
+    # `StartFraction r Over m right parenthesis` → `(r)/(m)` 后面跟着 `)`。
+    s = re.sub(r"StartFraction\s*(.*?)\s*Over\s*(.*?)"
+               r"(?=\s*(?:EndFraction|right parenthesis|Superscript|Subscript|$))",
+               lambda m: "(" + m.group(1) + ")/(" + m.group(2) + ")",
+               s, flags=re.S)
+    s = re.sub(r"\bSuperscript\s*(?:Baseline\s*)?", "^", s)
+    s = re.sub(r"\bSubscript\s*", "_", s)
+    s = re.sub(r"\bBaseline\b", "", s)
+    s = re.sub(r"\bleft parenthesis\b", "(", s)
+    s = re.sub(r"\bright parenthesis\b", ")", s)
+    s = re.sub(r"\bleft bracket\b", "[", s)
+    s = re.sub(r"\bright bracket\b", "]", s)
+    s = re.sub(r"\bnegative\s+", "-", s)
+    s = re.sub(r"\bpositive\s+", "", s)
+    s = re.sub(r"\bdivided by\b", "/", s)
+    s = re.sub(r"\btimes\b", "*", s)
+    s = re.sub(r"\bequals\b", "=", s)
+    s = re.sub(r"\bplus\b", "+", s)
+    s = re.sub(r"\bminus\b", "-", s)
+    s = re.sub(r"\bsquared\b", "^2", s)
+    s = re.sub(r"\bcubed\b", "^3", s)
+    s = re.sub(r"\bcomma\b", ",", s)
+    s = re.sub(r"\binfinity\b", "∞", s)
+    s = re.sub(r"\bpi\b", "π", s)
+    s = re.sub(r"\s+", "", s)
     return s
+
 
 def normalize_answer(text: str) -> str:
     """把答案归一化后用于比较（不改变真正填进去的内容）。

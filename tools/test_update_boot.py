@@ -21,7 +21,7 @@ with open(os.path.join(cfg_dir, "config.json"), "w", encoding="utf-8") as fh:
         "base_url": "https://api.deepseek.com/v1",
         "model": "deepseek-flash",
         "onboarding_state": "done",
-        "onboarding_version": "1.0.6-rc.04",
+        "onboarding_version": "1.1.7",
         "onboarding_resume_step": 9,
     }, fh)
 
@@ -50,8 +50,8 @@ def fake_status():
 def fake_update_check(*args, **kwargs):
     calls.append(1)
     return {
-        "version": "1.0.6-rc.04",
-        "tag": "v1.0.6-rc.04",
+        "version": "1.1.7",
+        "tag": "v1.1.7",
         "notes": "",
         "url": "https://example.invalid/releases",
         "source": "test",

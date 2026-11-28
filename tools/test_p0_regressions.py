@@ -20,7 +20,7 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
     def do_GET(self):
-        body = (SHA + "  SpellCardHomework-Setup-1.0.6-rc.04.exe\n").encode()
+        body = (SHA + "  SpellCardHomework-Setup-1.1.7.exe\n").encode()
         self.send_response(200)
         self.send_header("Content-Type", "text/plain")
         self.send_header("Content-Length", str(len(body)))
@@ -35,7 +35,7 @@ url = f"http://127.0.0.1:{srv.server_address[1]}/setup.exe.sha256"
 # 1) USER_AGENT / .sha256 sidecar path
 sha = update._find_sha256(
     [{"name": "setup.exe.sha256", "browser_download_url": url}],
-    {"name": "SpellCardHomework-Setup-1.0.6-rc.04.exe", "digest": ""}, "", 3.0)
+    {"name": "SpellCardHomework-Setup-1.1.7.exe", "digest": ""}, "", 3.0)
 assert sha == SHA, sha
 print("sha sidecar OK")
 

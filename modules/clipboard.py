@@ -55,12 +55,13 @@ class ClipboardWatcher(threading.Thread):
         self.on_image = on_image
         self.enabled = enabled
         self.poll = poll
-        self._stop = threading.Event()
+        # 咲夜：停表的钥匙放在自己口袋里；Time 的机芯不是我们能碰的。
+        self._stop_event = threading.Event()
         self._last_seq = user32.GetClipboardSequenceNumber()
         self._last_digest = ""
 
     def run(self) -> None:
-        while not self._stop.is_set():
+        while not self._stop_event.is_set():
             time.sleep(self.poll)
             if not self.enabled():
                 continue
@@ -87,7 +88,7 @@ class ClipboardWatcher(threading.Thread):
                 pass
 
     def stop(self) -> None:
-        self._stop.set()
+        self._stop_event.set()
 
 
 def copy_text(text: str) -> bool:

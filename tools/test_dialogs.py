@@ -36,7 +36,7 @@ def grab(title: str, name: str) -> None:
 a._open_settings()
 time.sleep(0.6)
 root.update()
-grab("设置", "settings_fixed.png")
+grab("境界設定", "settings_fixed.png")
 for t in root.winfo_children():
     if isinstance(t, tk.Toplevel):
         t.destroy()

@@ -102,6 +102,7 @@ class StreamResult:
     usage: dict = field(default_factory=dict)
     model: str = ""
     elapsed: float = 0.0
+    truncated: bool = False
 
 
 def list_models(base: str, api_key: str, timeout: float = 20.0) -> list[str]:
@@ -188,23 +189,43 @@ def chat_stream(
                     result = _parse_json_once(resp.read(), result, on_delta)
                     break
                 result = _read_sse(resp, result, on_delta, on_reasoning, cancel)
+                if result.truncated:
+                    raise LLMError(
+                        "魔理沙：式神的话说到一半就断了……（流被截断，重来一次）")
                 break
         except urllib.error.HTTPError as e:
             body = e.read().decode("utf-8", "replace")
             if e.code == 400 and "stream_options" in body.lower() and attempt == 1:
                 payload.pop("stream_options", None)
                 continue
+            if (e.code == 400 and "max_tokens" in body.lower()
+                    and "max_tokens" in payload and attempt == 1):
+                # 少数自建网关不认 max_tokens；去掉重试一次，别让全自动
+                # 因为一个可选参数整轮失败。
+                payload.pop("max_tokens", None)
+                continue
             if e.code == 400 and reasoning_effort and "reasoning" in body.lower() and attempt == 1:
                 drop_effort = True
+            elif (e.code == 429 or e.code >= 500) and attempt <= 2:
+                # 紫：境界那头一阵风，等它自己缓过来，再敲一次门。
+                time.sleep(0.8 * attempt)
+                continue
             else:
                 raise _friendly_http_error(e.code, body) from None
         except urllib.error.URLError as e:
+            if isinstance(e.reason, socket.timeout) and attempt <= 2:
+                time.sleep(0.8 * attempt)
+                continue
             if attempt == 1 and not isinstance(e.reason, socket.timeout):
                 time.sleep(0.6)
                 continue
-            raise LLMError(f"连不上服务器：{e.reason}") from None
+            raise LLMError(f"魔理沙：连不上式神所在的境界——{e.reason}") from None
         except socket.timeout:
-            raise LLMError("请求超时（模型可能正在思考，可稍后重试或换更快模型）") from None
+            if attempt <= 2:
+                time.sleep(0.8 * attempt)
+                continue
+            raise LLMError(
+                "灵梦：式神想得太久，茶都凉了……（请求超时，换更快的神社试试）") from None
 
         if drop_effort:
             payload.pop("reasoning_effort", None)
@@ -227,9 +248,15 @@ def _record_usage(result: StreamResult) -> None:
 def _read_sse(resp, result: StreamResult, on_delta, on_reasoning, cancel) -> StreamResult:
     text_parts: list[str] = []
     reason_parts: list[str] = []
+    saw_done = False
+    # 有的平台（本地 Ollama / LM Studio、部分自建网关）收尾时只发最后一块
+    # finish_reason、不发 [DONE]。只看 [DONE] 会把这些平台的每一次调用都判成
+    # 「流被截断」，等于把好好的式神全废掉。
+    # （帕秋莉：书读完了就是读完了，不是非要有人在最后一页盖个章。）
+    saw_finish = False
     for raw in resp:
         if cancel is not None and cancel.is_set():
-            raise LLMError("已停止")
+            raise LLMError("咲夜：时间到了，先停手。")
         if not raw:
             continue
         line = raw.decode("utf-8", "replace").strip()
@@ -238,6 +265,7 @@ def _read_sse(resp, result: StreamResult, on_delta, on_reasoning, cancel) -> Str
         if line.startswith("data:"):
             line = line[5:].strip()
         if line == "[DONE]":
+            saw_done = True
             break
         if not line.startswith("{"):
             continue
@@ -249,13 +277,19 @@ def _read_sse(resp, result: StreamResult, on_delta, on_reasoning, cancel) -> Str
             msg = chunk["error"]
             if isinstance(msg, dict):
                 msg = msg.get("message") or msg
-            raise LLMError(f"接口返回错误：{msg}")
+            raise LLMError(f"式神递来的符纸写着错误：{msg}")
         if chunk.get("usage"):
             result.usage = chunk["usage"]
         choices = chunk.get("choices") or []
         if not choices:
             continue
         ch = choices[0] or {}
+        # 魔理沙：式神说到一半被截断，这半句可不能当答案交上去。
+        finish = str(ch.get("finish_reason") or "").lower()
+        if finish:
+            saw_finish = True
+        if finish in ("length", "max_tokens"):
+            result.truncated = True
         delta = ch.get("delta") or ch.get("message") or {}
         rc = delta.get("reasoning_content") or delta.get("reasoning")
         if rc:
@@ -267,6 +301,9 @@ def _read_sse(resp, result: StreamResult, on_delta, on_reasoning, cancel) -> Str
             text_parts.append(content)
             if on_delta:
                 on_delta(content)
+    # 既没有 [DONE]、也没有任何 finish_reason —— 这才是真的「话说到一半断了」
+    if not saw_done and not saw_finish:
+        result.truncated = True
     result.text = "".join(text_parts)
     result.reasoning = "".join(reason_parts)
     return result
@@ -311,17 +348,33 @@ def chat_once(
             if e.code == 400 and "stream_options" in body.lower() and attempt == 1:
                 payload.pop("stream_options", None)
                 continue
+            if (e.code == 400 and "max_tokens" in body.lower()
+                    and "max_tokens" in payload and attempt == 1):
+                # 少数自建网关不认 max_tokens；去掉重试一次，别让全自动
+                # 因为一个可选参数整轮失败。
+                payload.pop("max_tokens", None)
+                continue
             if e.code == 400 and reasoning_effort and "reasoning" in body.lower() and attempt == 1:
                 drop_effort = True
+            elif (e.code == 429 or e.code >= 500) and attempt <= 2:
+                time.sleep(0.8 * attempt)
+                continue
             else:
                 raise _friendly_http_error(e.code, body) from None
         except urllib.error.URLError as e:
+            if isinstance(e.reason, socket.timeout) and attempt <= 2:
+                time.sleep(0.8 * attempt)
+                continue
             if attempt == 1:
                 time.sleep(0.6)
                 continue
-            raise LLMError(f"连不上服务器：{e.reason}") from None
+            raise LLMError(f"魔理沙：连不上式神所在的境界——{e.reason}") from None
         except socket.timeout:
-            raise LLMError("请求超时") from None
+            if attempt <= 2:
+                time.sleep(0.8 * attempt)
+                continue
+            raise LLMError(
+                "灵梦：式神想得太久，茶都凉了……（请求超时，换更快的神社试试）") from None
         if drop_effort:
             payload.pop("reasoning_effort", None)
             reasoning_effort = None

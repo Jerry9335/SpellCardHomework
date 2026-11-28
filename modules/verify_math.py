@@ -43,29 +43,96 @@ def normalize_text(text: str) -> str:
     return s
 
 
-def _trim_math(expr: str) -> str:
-    """从一段文字里截取数学表达式部分，去掉句号/单位/后续说明。"""
-    s = str(expr or "").strip()
-    # 去掉题号/前缀，比如 "(a) "、"Find "
-    s = re.sub(r"^[\(\[]?[a-hA-H][\)\].:]\s*", "", s)
-    # 表达式允许的字符；x 是自变量，允许字母 y 只在开头标签里（已被剥离）
-    start = None
-    for i, ch in enumerate(s):
-        if ch.isdigit() or ch in "+-.xX(":
-            start = i
+def _read_brace(s: str, i: int) -> tuple[str | None, int]:
+    """帕秋莉：从 s[i] 的 '{' 读到配对的 '}'；读不完整就承认失败。"""
+    if i >= len(s) or s[i] != "{":
+        return None, i
+    depth = 0
+    j = i
+    while j < len(s):
+        c = s[j]
+        if c == "\\":
+            j += 2
+            continue
+        if c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+            if depth == 0:
+                return s[i + 1:j], j + 1
+        j += 1
+    return None, i
+
+
+def _read_arg(s: str, i: int) -> tuple[str | None, int]:
+    """读一个公式参数：{...}、单个字母或数字（含负号/小数）。"""
+    while i < len(s) and s[i] in " \t":
+        i += 1
+    if i >= len(s):
+        return None, i
+    if s[i] == "{":
+        return _read_brace(s, i)
+    m = re.match(r"[+-]?\d+(?:\.\d+)?|[A-Za-z]", s[i:])
+    if not m:
+        return None, i
+    return m.group(0), i + len(m.group(0))
+
+
+def _latex_to_plain(s: str) -> str:
+    """帕秋莉：把公式书上的 LaTeX 记号翻成能算的普通式子。
+
+    只翻能可靠翻的部分；翻不动的命令会原样留下，交给后面的严格校验拒绝，
+    绝不把“只读了一半”的式子当成完整答案。
+    """
+    s = str(s or "").replace("$", "")
+    s = s.replace("\\left", "").replace("\\right", "")
+    s = (s.replace("\\cdot", "*").replace("\\times", "*")
+         .replace("\\ast", "*").replace("\\div", "/").replace("\\ ", " "))
+
+    # \frac{a}{b}：简单数字直接写 a/b，复杂参数加括号，保证优先级不丢。
+    frac = re.compile(r"\\(?:d|t)?frac\s*")
+    while True:
+        m = frac.search(s)
+        if not m:
             break
-    if start is None:
-        return ""
-    s = s[start:]
-    out = []
-    for ch in s:
-        if ch in "0123456789xX+-*/().^ ":
-            out.append(ch)
+        a, p = _read_arg(s, m.end())
+        if a is None:
+            break
+        b, p = _read_arg(s, p)
+        if b is None:
+            break
+        if (re.fullmatch(r"[+-]?\d+(?:\.\d+)?", a)
+                and re.fullmatch(r"[+-]?\d+(?:\.\d+)?", b)):
+            repl = f"{a}/{b}"
         else:
+            repl = f"({a})/({b})"
+        s = s[:m.start()] + repl + s[p:]
+
+    # 根式不是多项式；翻成 sqrt(...) 让严格校验拒绝，而不是截成前面的系数。
+    sqrt = re.compile(r"\\sqrt\s*")
+    while True:
+        m = sqrt.search(s)
+        if not m:
             break
-    s = "".join(out).strip()
-    # 去掉不成对的尾部运算符/括号
-    s = s.rstrip("+-*/(.^ ")
+        if s[m.end():m.end() + 1] == "[":
+            break
+        a, p = _read_arg(s, m.end())
+        if a is None:
+            break
+        s = s[:m.start()] + f"sqrt({a})" + s[p:]
+
+    # 上标：纯数字写成 ^2，复杂内容加括号；后面仍带 ^ 的交给严格校验。
+    exp = re.compile(r"\^\{([^{}]*)\}")
+    while True:
+        def _exp(m):
+            body = m.group(1).strip()
+            if re.fullmatch(r"[+-]?\d+(?:\.\d+)?", body):
+                return "^" + body
+            return "^(" + body + ")"
+        new = exp.sub(_exp, s)
+        if new == s:
+            break
+        s = new
     return s
 
 
@@ -143,18 +210,44 @@ def parse_number_exact(value) -> Fraction | None:
 
 
 def parse_poly(expr: str):
-    """解析一次/二次多项式，返回 (a, b, c)，ax^2+bx+c。
+    """帕秋莉：解析一次/二次多项式，返回 (a, b, c)，ax^2+bx+c。
 
-    支持缺失项、负系数、分数、``squared``/``minus`` 等写法；失败返回 None。
+    支持缺失项、负系数、分数、``squared``/``minus`` 等写法；**必须整串被
+    消费**——只要还残留花括号、反斜杠或别的看不懂的字，就返回 None，绝不
+    拿前半截去冒充答案（否则 f(x)=x^{2}-4 会被读成 f(x)=x）。
     """
-    s = normalize_text(expr)
+    s = normalize_text(_latex_to_plain(expr))
     # 去掉 y= / R(x)= / f(x)= 等标签；只取等号右边
     if "=" in s:
         s = s.split("=")[-1]
-    s = _trim_math(s)
+    s = s.strip()
+    # 去掉题号/前缀，比如 "(a) "、"Find "
+    s = re.sub(r"^[\(\[]?[a-hA-H][\)\].:]\s*", "", s).strip()
+    start = None
+    for i, ch in enumerate(s):
+        if ch.isdigit() or ch in "+-.xX(":
+            start = i
+            break
+    if start is None:
+        return None
+    s = s[start:]
+    allowed = "0123456789xX+-*/().^² "
+    out = []
+    i = 0
+    while i < len(s) and s[i] in allowed:
+        out.append(s[i])
+        i += 1
+    tail = s[i:].strip()
+    if tail and not re.fullmatch(r"[.,;:!?。，；：！？)\]】]*", tail):
+        return None
+    s = "".join(out).strip()
+    if s.endswith("."):
+        s = s[:-1]
+    s = s.rstrip("+-*/(.^ ")
     if not s:
         return None
     s = re.sub(r"\s+", "", s).replace("*", "")
+    s = re.sub(r"\^\(\s*(-?\d+(?:\.\d+)?)\s*\)", r"^\1", s)
     s = s.replace("^2", "²")
     if "^" in s:
         return None
@@ -215,7 +308,11 @@ def poly_features(poly) -> dict:
         if disc >= -1e-9:
             disc = max(0.0, disc)
             r = disc ** 0.5
-            out["x_intercepts"] = [(-b - r) / (2 * a), (-b + r) / (2 * a)]
+            roots = [(-b - r) / (2 * a), (-b + r) / (2 * a)]
+            if abs(roots[0] - roots[1]) <= 1e-9:
+                out["x_intercepts"] = [roots[0]]  # 重根只算一个交点
+            else:
+                out["x_intercepts"] = sorted(roots)
     else:
         if abs(b) > 1e-12:
             out["x_intercepts"] = [-c / b]
@@ -289,7 +386,7 @@ def _close(a: float, b: float, tol: float = 1e-6) -> bool:
 def verify_graph_objects(objects: list[dict], functions: list[dict]) -> tuple[str, str]:
     """验证作图对象是否落在题干函数上。"""
     if not objects or not functions:
-        return "skip", "没有可验证的图形/函数"
+        return "skip", "帕秋莉：没有可验证的图形或函数……"
     polys = [f["poly"] for f in functions]
     checked = 0
     for obj in objects:
@@ -297,7 +394,7 @@ def verify_graph_objects(objects: list[dict], functions: list[dict]) -> tuple[st
             continue
         pts = obj.get("points") or []
         if len(pts) < 2:
-            return "fail", "图形点数不足"
+            return "fail", "帕秋莉：图形上的点不够，画不出关系。"
         # 对每个函数尝试全部点；只要有一个函数能拟合全部点就算对
         fit = False
         for poly in polys:
@@ -309,11 +406,11 @@ def verify_graph_objects(objects: list[dict], functions: list[dict]) -> tuple[st
                 fit = True
                 break
         if not fit:
-            return "fail", "图形上的点不满足题干函数"
+            return "fail", "帕秋莉：这些点不落在题干的函数上。"
         checked += 1
     if not checked:
-        return "skip", "图形对象类型未知"
-    return "ok", f"已验证 {checked} 个图形对象"
+        return "skip", "帕秋莉：这种图形对象我没见过。"
+    return "ok", f"帕秋莉：{checked} 个图形对象都与题干吻合。"
 
 
 def verify_candidate(packet: dict, spec: dict) -> tuple[str, str]:
@@ -335,13 +432,13 @@ def verify_candidate(packet: dict, spec: dict) -> tuple[str, str]:
 
     # 控件完整性：模型漏答必须判失败
     if radios and not choices:
-        return "fail", "题目有选项，但答案没有 CHOICE"
+        return "fail", "帕秋莉：题目有选项，可答案里没有 CHOICE……"
     if drops and not spec.get("drops"):
-        return "fail", "题目有下拉框，但答案没有 DROPDOWN"
+        return "fail", "帕秋莉：题目有下拉框，可答案里没有 DROPDOWN……"
     if fields and not (values or matrix):
-        return "fail", "题目有填空，但答案没有 VALUE/MATRIX"
+        return "fail", "帕秋莉：题目有填空，可答案里没有 VALUE/MATRIX……"
     if fields and values and not matrix and len(values) < len(fields):
-        return "fail", f"题目有 {len(fields)} 个填空，答案只给了 {len(values)} 个"
+        return "fail", f"帕秋莉：题目有 {len(fields)} 个填空，答案只给了 {len(values)} 个……"
 
     checked = 0
     problems = []
@@ -380,13 +477,36 @@ def verify_candidate(packet: dict, spec: dict) -> tuple[str, str]:
             continue
         if ("x-intercept" in low or "x intercept" in low
                 or "zero of" in low or "zeros of" in low):
-            nums = [parse_number(x) for x in re.split(r"[,;]", str(v))]
-            nums = [x for x in nums if x is not None]
             want = feat.get("x_intercepts") or []
-            if not nums:
+            raw_v = str(v or "").strip()
+            low_v = raw_v.lower().rstrip("。.")
+            is_none = bool(re.fullmatch(
+                r"(?:none|no\s+(?:real\s+)?(?:x[-\s]?intercepts?|zeros?|"
+                r"solutions?|roots?)|无(?:实)?根|没有(?:实)?根)", low_v))
+            if is_none:
+                if want:
+                    problems.append(f"{label}: 其实有 {len(want)} 个交点，不能写没有")
+                else:
+                    checked += 1
+                continue
+            segs = [p.strip() for p in
+                    re.split(r"[,;]|\bor\b|\band\b", raw_v) if p.strip()]
+            nums: list[float] = []
+            bad = False
+            for seg in segs:
+                num = parse_number(seg)
+                if num is None:
+                    bad = True
+                    break
+                if not any(_close(num, x) for x in nums):
+                    nums.append(num)
+            if bad or not nums:
                 problems.append(f"{label}: 不是数字")
-            elif not all(any(_close(x, w) for w in want) for x in nums):
-                problems.append(f"{label}: x 截距应为 {want}")
+            elif not want:
+                problems.append(f"{label}: 这题没有实根，不该填数值")
+            elif len(nums) != len(want) or not all(
+                    any(_close(x, w) for w in want) for x in nums):
+                problems.append(f"{label}: 应正好是 {len(want)} 个不同的根 {want}")
             else:
                 checked += 1
             continue
@@ -418,10 +538,10 @@ def verify_candidate(packet: dict, spec: dict) -> tuple[str, str]:
             continue
 
     if problems:
-        return "fail", "；".join(problems[:3])
+        return "fail", "帕秋莉：" + "；".join(problems[:3])
     if checked:
-        return "ok", f"已验算 {checked} 项"
-    return "skip", "没有可本地验算的关系"
+        return "ok", f"帕秋莉：已验算 {checked} 项，和公式书对得上。"
+    return "skip", "帕秋莉：这道题没有可代入的关系式……"
 
 
 def canonical_value(value) -> str:

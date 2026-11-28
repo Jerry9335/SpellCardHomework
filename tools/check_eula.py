@@ -12,7 +12,7 @@ sys.path.insert(0, ROOT)
 from modules import capture  # noqa: E402
 
 capture.make_dpi_aware()
-setup = os.path.join(ROOT, "installer", "Output", "SpellCardHomework-Setup-1.0.6-rc.04.exe")
+setup = os.path.join(ROOT, "installer", "Output", "SpellCardHomework-Setup-1.1.7.exe")
 proc = subprocess.Popen([setup, "/CURRENTUSER", "/LANG=chinesesimplified"])
 
 user32 = ctypes.windll.user32

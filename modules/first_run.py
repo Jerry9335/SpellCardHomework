@@ -22,7 +22,10 @@ ONBOARD_STEPS = 6
 # 这些字段一旦出现，说明用户已经真正配置过模型接口，属于老用户。
 _SETUP_KEYS = ("api_key_enc", "api_key", "vision_api_key_enc", "vision_api_key")
 _DEFAULT_BASE = "https://api.deepseek.com/v1"
-_DEFAULT_MODEL = "deepseek-flash"
+# 必须和 settings.DEFAULTS["model"] 一致，否则默认值会被当成「用户自己配过」，
+# 于是一个只激活了授权、还没填通行密钥的用户会直接跳过首次契约。
+# （灵梦：默认的那张符卡不算你自己画的，别拿它冒充。）
+_DEFAULT_MODEL = "deepseek-chat"
 
 
 def has_setup(cfg: dict) -> bool:
@@ -39,31 +42,29 @@ def has_setup(cfg: dict) -> bool:
 
 def should_show(cfg: dict, pre_access: str, config_existed: bool,
                 manual: bool = False) -> bool:
-    """返回本次启动是否应进入首次安装流程。"""
+    """返回本次启动是否应自动进入首次安装流程。
+
+    自动全屏只在“真正的新安装 / 重装”出现一次：
+    - 中断、手动取消后的 pending/in_progress 不再自动弹；
+    - 契约没配好或引路没看完，用户去设置中心补，或点“重看引路”；
+    - 这样不会每次启动都被半截引导拦住。
+    """
     if manual:
         return True
     state = str(cfg.get("onboarding_state") or "").strip().lower()
     if state == STATE_DONE:
         return False
-    # legacy 只应属于真正配置过接口的老用户。旧版曾把“有 config”误标成
-    # legacy；如果配置里其实没有 API Key/自定义接口，就在这里修复，补上
-    # 首次契约，而不是永远跳过。
-    if state == STATE_LEGACY:
-        return not has_setup(cfg)
+    # 重装由 _apply_install_anchor 写入一次性标记；消费后不会反复弹。
+    if cfg.get("onboarding_reinstall"):
+        return True
+    # pending / in_progress 是“上次中断”，按新方案不再自动续。
     if state in (STATE_PENDING, STATE_IN_PROGRESS):
-        return True
-    # 激活前是 fresh 说明本机原本没有有效授权；这时即使目录里残留了
-    # 旧 config.json（例如先装过旧版、再在同一个 Windows 用户下重装），
-    # 也应该走首次安装契约，否则新用户会直接跳过 API/模型配置。
-    if pre_access == "fresh":
-        return True
-    # 旧版/重装可能留下“有 config 但没有真正配置模型”的空壳；授权状态
-    # 也可能因为旧试用/机器码变化显示 expired/tampered，甚至已经恢复成
-    # licensed。只要从未配置过 API Key 或自定义接口，就补上契约与新手引导。
-    # 真正配置过的老用户会命中 has_setup，不会被打扰。
-    if not has_setup(cfg):
-        return True
-    return False
+        return False
+    # legacy 是已升级用户，不自动打扰；需要时从设置里重看。
+    if state == STATE_LEGACY:
+        return False
+    # 真正的首次安装：激活前没有有效授权。
+    return pre_access == "fresh"
 
 
 def is_resume(cfg: dict) -> bool:
@@ -84,11 +85,14 @@ def mark_in_progress(cfg: dict, step: int = 1) -> None:
         cfg["onboarding_resume_step"] = 1
 
 
-def mark_done(cfg: dict, version: str, api_skipped: bool = False) -> None:
+def mark_done(cfg: dict, version: str, api_skipped: bool = False,
+              tour_skipped: bool = False) -> None:
     cfg["onboarding_state"] = STATE_DONE
     cfg["onboarding_version"] = version
     cfg["onboarding_done_at"] = _dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     cfg["onboarding_api_skipped"] = bool(api_skipped)
+    cfg["onboarding_tour_skipped"] = bool(tour_skipped)
+    cfg["onboarding_reinstall"] = False
     cfg["onboarding_resume_step"] = SETUP_STEPS + ONBOARD_STEPS
 
 
@@ -139,7 +143,13 @@ def reset_for_reinstall(cfg: dict) -> None:
     cfg["onboarding_version"] = ""
     cfg["onboarding_done_at"] = ""
     cfg["onboarding_api_skipped"] = False
+    cfg["onboarding_tour_skipped"] = False
     cfg["onboarding_resume_step"] = 1
+    # 一次性消费：确保重装后仍会自动开一次契约，但取消后不会无限重弹。
+    cfg["onboarding_reinstall"] = True
+    # 重装用户也应该看到“当前版本”的更新说明；如果沿用上次安装的已读版本，
+    # 引导结束后会误判成已看过，直接跳过。
+    cfg["whats_new_seen_version"] = ""
 
 
 def config_exists(path: str) -> bool:

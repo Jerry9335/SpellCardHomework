@@ -1,4 +1,4 @@
-﻿"""首次安装判定 / 状态标记回归。"""
+"""首次安装判定 / 状态标记回归。"""
 from __future__ import annotations
 
 import os
@@ -21,11 +21,14 @@ def main() -> None:
     # 同机重装/目录残留旧 config，但激活前仍是 fresh：也要走首次安装契约
     assert first_run.should_show({}, "fresh", True) is True
 
-    # 已授权/试用但从未配置接口：仍然补首次契约，否则主界面无法答题
-    assert first_run.should_show({}, "licensed", True) is True
-    assert first_run.should_show({}, "trial", False) is True
-    assert first_run.should_show({}, "expired", True) is True
-    assert first_run.should_show({}, "tampered", True) is True
+    # 已授权/试用但从未配置接口：不再自动弹全屏契约，用户去设置中心补。
+    assert first_run.should_show({}, "licensed", True) is False
+    assert first_run.should_show({}, "trial", False) is False
+    assert first_run.should_show({}, "expired", True) is False
+    assert first_run.should_show({}, "tampered", True) is False
+    # 重装由一次性标记触发，消费后不再自动弹。
+    assert first_run.should_show({"onboarding_reinstall": True},
+                                 "licensed", True) is True
 
     # 已配置过 API Key 的老用户即使授权 expired 也不弹
     assert first_run.has_setup({"api_key": "sk-test"}) is True
@@ -34,14 +37,13 @@ def main() -> None:
     assert first_run.has_setup({"model": "qwen2.5:7b",
                                 "base_url": "http://localhost:11434/v1"}) is True
 
-    # done 永不自动弹；legacy 只有在确实配置过接口时才算老用户
+    # done / legacy / 中断状态都不自动弹；设置中心负责补契约和重看引路。
     assert first_run.should_show({"onboarding_state": "done"}, "fresh", False) is False
-    assert first_run.should_show({"onboarding_state": "legacy"}, "fresh", False) is True
+    assert first_run.should_show({"onboarding_state": "legacy"}, "fresh", False) is False
     assert first_run.should_show({"onboarding_state": "legacy",
                                   "api_key": "sk-test"}, "fresh", False) is False
-
-    # 中断可续
-    assert first_run.should_show({"onboarding_state": "pending"}, "licensed", True) is True
+    assert first_run.should_show({"onboarding_state": "pending"}, "licensed", True) is False
+    assert first_run.should_show({"onboarding_state": "in_progress"}, "fresh", True) is False
     assert first_run.is_resume({"onboarding_state": "in_progress"}) is True
 
     # 状态标记
@@ -51,12 +53,15 @@ def main() -> None:
     first_run.mark_in_progress(cfg, 4)
     assert cfg["onboarding_state"] == "in_progress"
     assert cfg["onboarding_resume_step"] == 4
-    first_run.mark_done(cfg, "1.0.6-rc.04", True)
+    first_run.mark_done(cfg, "1.1.7", True)
     assert cfg["onboarding_state"] == "done"
-    assert cfg["onboarding_version"] == "1.0.6-rc.04"
+    assert cfg["onboarding_version"] == "1.1.7"
     assert cfg["onboarding_api_skipped"] is True
+    assert cfg["onboarding_tour_skipped"] is False
     assert cfg["onboarding_done_at"]
     assert first_run.is_resume(cfg) is False
+    first_run.mark_done(cfg, "1.1.7", True, tour_skipped=True)
+    assert cfg["onboarding_tour_skipped"] is True
 
     with tempfile.NamedTemporaryFile("w", delete=False, encoding="utf-8") as f:
         f.write("{}")
@@ -89,12 +94,13 @@ def main() -> None:
         # 锚点变化 => 重装。
         assert first_run.reinstall_detected({"install_anchor": "1"},
                                             cfg_path, install) is True
-        done = {"onboarding_state": "done", "onboarding_version": "1.0.6-rc.04",
+        done = {"onboarding_state": "done", "onboarding_version": "1.1.7",
                 "onboarding_resume_step": 9, "onboarding_api_skipped": True,
                 "api_key": "sk-keep-me"}
         first_run.reset_for_reinstall(done)
         assert done["onboarding_state"] == "pending"
         assert done["onboarding_resume_step"] == 1
+        assert done["onboarding_reinstall"] is True
         assert done["api_key"] == "sk-keep-me"
     print("first_run OK")
 

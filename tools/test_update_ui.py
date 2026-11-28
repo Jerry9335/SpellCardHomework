@@ -43,7 +43,7 @@ if win:
     capture.grab(win, "window").image.save(os.path.join(HERE, "shots", "settings_bottom.png"))
     print("saved settings_bottom.png")
 
-info = {"version": "1.0.6-rc.04", "tag": "v1.0.6-rc.04", "source": "gitee",
+info = {"version": "1.1.7", "tag": "v1.1.7", "source": "gitee",
         "date": "2026-11-30", "notes": "· 新增自动检查更新\n· 新增 Windows Toast 通知\n· 自动答题稳定性修复",
         "url": "https://gitee.com/jerry6663/SpellCardHomework/releases/tag/v1.0.2",
         "download": "https://gitee.com/jerry6663/SpellCardHomework/releases/download/v1.0.2/Setup.exe"}

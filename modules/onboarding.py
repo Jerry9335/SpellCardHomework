@@ -248,10 +248,12 @@ class OnboardingWizard(tk.Toplevel):
         sw, sh = self._screen
         self.canvas.create_text(52, 38, text="新手引导", anchor="w",
                                 fill=self.gold, font=(self.F_TITLE, 30))
-        self.step_text = self.canvas.create_text(sw - 50, 48, text="01 / 06", anchor="e",
-                                                 fill=self.gold, font=(self.F_UI, 13, "bold"))
-        self.sub_text = self.canvas.create_text(52, 78, text="东方 Project 风格 · 6 步认识符卡作业簿",
-                                                anchor="w", fill=self.muted, font=(self.F_UI, 10))
+        self.step_text = self.canvas.create_text(
+            sw - 50, 48, text="引路 · 第 1 / 6 站", anchor="e",
+            fill=self.gold, font=(self.F_UI, 13, "bold"))
+        self.sub_text = self.canvas.create_text(
+            52, 78, text="东方 Project 风格 · 第 1 站 / 共 6 站",
+            anchor="w", fill=self.muted, font=(self.F_UI, 10))
         self.shot_item = self.canvas.create_image(52, 112, anchor="nw")
         card_w = 382
         card_x = sw - card_w - 50
@@ -283,13 +285,13 @@ class OnboardingWizard(tk.Toplevel):
                                   activeforeground=self.text, relief="flat", bd=0,
                                   cursor="hand2", font=(self.F_UI, 9))
         self.skip_btn.pack(side="left")
-        self.next_btn = tk.Button(bar, text="下一位 →", command=self._next,
+        self.next_btn = tk.Button(bar, text="下一站 →", command=self._next,
                                   bg=self.gold, fg="#241b12", activebackground="#f0d486",
                                   activeforeground="#241b12", relief="flat", bd=0,
                                   padx=18, pady=7, cursor="hand2",
                                   font=(self.F_UI, 10, "bold"))
         self.next_btn.pack(side="right")
-        self.prev_btn = tk.Button(bar, text="← 上一位", command=self._prev,
+        self.prev_btn = tk.Button(bar, text="← 上一站", command=self._prev,
                                   bg=self.panel, fg=self.muted, activebackground=self.panel,
                                   activeforeground=self.text, relief="flat", bd=0,
                                   cursor="hand2", font=(self.F_UI, 9))
@@ -298,8 +300,10 @@ class OnboardingWizard(tk.Toplevel):
     def _show_step(self, step: int) -> None:
         self.step = max(1, min(len(STEPS), step))
         d = STEPS[self.step - 1]
-        self.canvas.itemconfigure(self.step_text, text=f"{self.step:02d} / 06")
-        self.canvas.itemconfigure(self.sub_text, text=f"东方 Project 风格 · 第 {self.step} 步 / 共 6 步")
+        self.canvas.itemconfigure(
+            self.step_text, text=f"引路 · 第 {self.step} / {len(STEPS)} 站")
+        self.canvas.itemconfigure(
+            self.sub_text, text=f"东方 Project 风格 · 第 {self.step} 站 / 共 {len(STEPS)} 站")
         shot = self._shots.get("expanded" if self.step in (3, 4) else "collapsed")
         if shot is None:
             shot = self._shots.get("collapsed")
@@ -326,7 +330,7 @@ class OnboardingWizard(tk.Toplevel):
         self._draw_dots()
         self.prev_btn.configure(state="normal" if self.step > 1 else "disabled",
                                 fg=self.muted if self.step > 1 else "#5b5470")
-        self.next_btn.configure(text="开始使用" if self.step == len(STEPS) else "下一位 →")
+        self.next_btn.configure(text="开始使用" if self.step == len(STEPS) else "下一站 →")
         try:
             if self.on_progress:
                 self.on_progress(self.step)

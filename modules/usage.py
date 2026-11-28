@@ -143,8 +143,18 @@ def summary(days: int = 30) -> dict:
     }
 
 
-def export_csv(dest: str) -> int:
-    rows = load()
+def clear() -> bool:
+    """清空本机用量账本（只动 usage.jsonl，不动配置/Key）。"""
+    try:
+        with open(path(), "w", encoding="utf-8"):
+            pass
+        return True
+    except Exception:
+        return False
+
+
+def export_csv(dest: str, rows: list[dict] | None = None) -> int:
+    rows = list(rows) if rows is not None else load()
     with open(dest, "w", encoding="utf-8-sig", newline="") as f:
         w = csv.writer(f)
         w.writerow(["时间", "模型", "输入 tokens", "输出 tokens", "总 tokens", "耗时(秒)", "费用(元)"])
@@ -181,8 +191,13 @@ def _load_font(size: int):
         return None
 
 
-def render_chart(by_day: list[tuple[str, float, int]], width: int = 860, height: int = 170) -> "object":
-    """把近 N 天费用画成柱状图（PIL Image）。"""
+def render_chart(by_day: list[tuple[str, float, int]], width: int = 860,
+                 height: int = 170, kind: str = "bar",
+                 progress: float = 1.0) -> "object":
+    """把近 N 天费用画成柱状图或折线图（PIL Image）。
+
+    line 模式下 progress<1 只画到对应位置，供账本做“沿走势画线”的动画。
+    """
     from PIL import Image, ImageDraw
 
     img = Image.new("RGB", (width, height), (26, 22, 44))
@@ -201,9 +216,41 @@ def render_chart(by_day: list[tuple[str, float, int]], width: int = 860, height:
         d.line([(pad_l, y), (width - 12, y)], fill=(44, 38, 66))
         d.text((6, y - 7), f"¥{max_cost * (3 - i) / 3:.2f}", font=font, fill=(150, 140, 180))
 
+    p = max(0.0, min(1.0, float(progress)))
+    if kind == "line":
+        points = []
+        for i, (_day, cost, _tok) in enumerate(by_day):
+            x = pad_l + i * (plot_w / max(1, n - 1)) if n > 1 else pad_l + plot_w / 2
+            y = pad_t + plot_h - int(plot_h * (cost / max_cost))
+            points.append((x, y))
+        seg = p * max(0, len(points) - 1)
+        upto = int(seg)
+        shown = points[:upto + 1]
+        if upto < len(points) - 1 and p > 0:
+            x0, y0 = points[upto]
+            x1, y1 = points[upto + 1]
+            frac = seg - upto
+            shown.append((x0 + (x1 - x0) * frac, y0 + (y1 - y0) * frac))
+        if len(shown) >= 2:
+            d.line(shown, fill=(232, 150, 70), width=2, joint="curve")
+        for x, y in shown:
+            d.ellipse([x - 2, y - 2, x + 2, y + 2], fill=(232, 150, 70))
+        for i, (day, _cost, _tok) in enumerate(by_day):
+            if i % 5 == 0:
+                x = pad_l + i * (plot_w / max(1, n - 1)) if n > 1 else pad_l + plot_w / 2
+                d.text((x - 8, height - 20), day[5:], font=font, fill=(150, 140, 180))
+        return img
+
+    # 柱子各自从 0 长起来，并做轻微左→右错峰；p=1 时全高。
+    lag = 0.35
     for i, (day, cost, _tok) in enumerate(by_day):
         x = pad_l + i * (plot_w / n) + 1
-        h = int(plot_h * (cost / max_cost)) if max_cost else 0
+        if n <= 1:
+            local = p
+        else:
+            offset = (i / max(1, n - 1)) * lag
+            local = max(0.0, min(1.0, (p - offset) / max(0.01, 1.0 - lag)))
+        h = int(plot_h * (cost / max_cost) * local) if max_cost else 0
         if h > 0:
             d.rectangle([x, pad_t + plot_h - h, x + bar_w, pad_t + plot_h],
                         fill=(232, 150, 70))

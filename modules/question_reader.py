@@ -29,7 +29,10 @@ def build_packet(st: dict, text: str | None = None,
     inputs = [dict(x) for x in (st.get("inputs") or [])
               if isinstance(x, dict) and not x.get("disabled") and not x.get("readonly")]
     radios = [dict(x) for x in (st.get("radios") or []) if isinstance(x, dict)]
-    checks = [dict(x) for x in (st.get("checks") or []) if isinstance(x, dict)]
+    # 多小问会保留上一问的复选框并 disabled；它们不是当前小问的选项，
+    # 不能让模型以为“这题还要选 CHOICE”。
+    checks = [dict(x) for x in (st.get("checks") or [])
+              if isinstance(x, dict) and not x.get("disabled")]
     dropdowns = [dict(x) for x in (st.get("dropdowns") or []) if isinstance(x, dict)]
     selects = [dict(x) for x in (st.get("selects") or []) if isinstance(x, dict)]
 
