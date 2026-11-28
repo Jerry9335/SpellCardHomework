@@ -151,7 +151,7 @@ docs/                  screenshots and docs
 ### v1.1.7-hotfix (2026-11-28, hotfix)
 
 - **Upgrade no longer resets onboarding**: the installer writes a one-shot `onboarding_request.json` only when the old exe is absent; overwrite upgrades preserve `done`.
-- **Trial anti-reset**: a `trial_used` marker is stored outside the uninstaller-deleted folders (ProgramData / `.keep` / a separate registry key); removing trial files and reinstalling no longer grants a new 3-day trial.
+- **Trial anti-reset**: After the trial expires, uninstalling and reinstalling will no longer grant a new trial.
 - **Persistence fix**: `onboarding_reinstall`, `onboarding_tour_skipped` and `whats_new_seen_version` are now in the settings whitelist.
 - **Update UI**: direct download, release page, later and snooze entries are restored; startup check plus hourly runtime check are back.
 
