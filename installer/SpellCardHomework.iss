@@ -4,8 +4,8 @@
 
 #define MyAppName "SpellCardHomework"
 #define MyAppDisplayName "符卡作业簿"
-#define MyAppVersion "1.1.7"
-#define MyAppFileVersion "1.1.7.0"
+#define MyAppVersion "1.1.7-hotfix"
+#define MyAppFileVersion "1.1.7.1"
 #define MyAppPublisher "Shinichi, Fastrof & 会哈气の祥"
 #define MyAppExeName "SpellCardHomework.exe"
 #define MyAppURL "https://github.com/Jerry9335/SpellCardHomework"
@@ -54,11 +54,11 @@ Name: "resetlicense"; Description: "清除本机授权与试用记录（重新�
 
 [Files]
 Source: "..\dist\SpellCardHomework\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "使用说明-1.1.7.md"; DestDir: "{app}"; Flags: ignoreversion
+Source: "使用说明-1.1.7-hotfix.md"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\{#MyAppDisplayName}"; Filename: "{app}\{#MyAppExeName}"; AppUserModelID: "符卡作业簿"
-Name: "{group}\使用说明"; Filename: "{app}\使用说明-1.1.7.md"
+Name: "{group}\使用说明"; Filename: "{app}\使用说明-1.1.7-hotfix.md"
 Name: "{group}\{cm:UninstallProgram,{#MyAppDisplayName}}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#MyAppDisplayName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon; AppUserModelID: "符卡作业簿"
 

@@ -8,7 +8,7 @@
   <Identity
     Name="ShinichiSpellCardHomework"
     Publisher="CN=Shinichi"
-    Version="1.1.7.0"
+    Version="1.1.7.1"
     ProcessorArchitecture="x64" />
 
   <Properties>

@@ -53,7 +53,7 @@ class H(BaseHTTPRequestHandler):
 
 srv = ThreadingHTTPServer(("127.0.0.1", 0), H)
 threading.Thread(target=srv.serve_forever, daemon=True).start()
-url = f"http://127.0.0.1:{srv.server_address[1]}/SpellCardHomework-Setup-1.1.7.exe"
+url = f"http://127.0.0.1:{srv.server_address[1]}/SpellCardHomework-Setup-1.1.7-hotfix.exe"
 tmp = tempfile.mkdtemp(prefix="ui_dl_")
 os.environ["LOCALAPPDATA"] = tmp
 
@@ -61,8 +61,8 @@ capture.make_dpi_aware()
 root = tk.Tk()
 root.deiconify()
 info = {
-    "version": "1.1.7", "tag": "v1.1.7", "download": url,
-    "asset_name": "SpellCardHomework-Setup-1.1.7.exe",
+    "version": "1.1.7-hotfix", "tag": "v1.1.7-hotfix", "download": url,
+    "asset_name": "SpellCardHomework-Setup-1.1.7-hotfix.exe",
     "sha256": SHA, "source": "gitee", "notes": "测试",
     "max_threads": 8,
 }

@@ -140,6 +140,8 @@ TRIAL_DAYS = 3
 CLOCK_TOLERANCE = 3600  # 允许 1 小时的时钟误差
 
 _TRIAL_SEED_FILENAME = "trial_seed"
+_TRIAL_USED_FILENAME = "trial_used"
+_TRIAL_USED_REG = r"Software\Shinichi\SpellCardHomeworkTrial"
 
 # 旧版 HMAC 密钥：**仅为一次性迁移保留**——不要用它签任何新记录。
 # 它写在发行源码里，等于公开，只用来认出"上一版留下的合法账本"；
@@ -421,8 +423,75 @@ def _prior_use_config_paths() -> list[str]:
     return paths
 
 
+def _trial_used_paths() -> list[str]:
+    """卸载程序不会清理的“已用过试用”标记位置。"""
+    if _test_config_enabled():
+        return [os.path.join(settings.config_dir(), _TRIAL_USED_FILENAME)]
+    programdata = os.environ.get("PROGRAMDATA") or r"C:\ProgramData"
+    local = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
+    return [
+        os.path.join(programdata, settings.APP_DIRNAME, _TRIAL_USED_FILENAME),
+        # 独立目录：当前卸载器只删 %LOCALAPPDATA%\SpellCardHomework，
+        # 不会碰到这个 .keep 目录。
+        os.path.join(local, settings.APP_DIRNAME + ".keep", _TRIAL_USED_FILENAME),
+    ]
+
+
+def _trial_used_registry_present() -> bool:
+    if _test_config_enabled():
+        return False
+    try:
+        import winreg
+
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, _TRIAL_USED_REG) as k:
+            winreg.QueryValueEx(k, "used")
+        return True
+    except FileNotFoundError:
+        return False
+    except Exception:
+        # 读不出来时按“以前用过”处理，宁可少发一次试用，也不白送。
+        return True
+
+
+def _trial_used_present() -> bool:
+    for path in _trial_used_paths():
+        try:
+            if os.path.isfile(path) and os.path.getsize(path) > 0:
+                return True
+        except OSError:
+            pass
+    return _trial_used_registry_present()
+
+
+def _mark_trial_used() -> bool:
+    """写“已用过试用”标记；卸载时保留，重装后据此拒绝新试用。"""
+    wrote = False
+    payload = {
+        "used": 1,
+        "at": int(time.time()),
+        "machine": machine_code(),
+    }
+    for path in _trial_used_paths():
+        if _write_json(path, payload):
+            wrote = True
+    if not _test_config_enabled():
+        try:
+            import winreg
+
+            key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, _TRIAL_USED_REG)
+            winreg.SetValueEx(key, "used", 0, winreg.REG_DWORD, 1)
+            winreg.SetValueEx(key, "at", 0, winreg.REG_DWORD, int(time.time()))
+            winreg.CloseKey(key)
+            wrote = True
+        except Exception:
+            pass
+    return wrote
+
+
 def _used_before() -> bool:
-    """之前用过这个程序吗（配置里有通行密钥，或者试炼 seed 已经在了）。"""
+    """之前用过这个程序吗（标记 / 通行密钥 / 试炼 seed）。"""
+    if _trial_used_present():
+        return True
     for path in _prior_use_config_paths():
         try:
             with open(path, encoding="utf-8") as f:
@@ -470,10 +539,15 @@ def trial_status(update: bool = True) -> tuple[str, int, str]:
             invalid = True
 
     torn = "试炼的账本被撕破了一角，字迹读不出来，境界不认这个"
+    copies = valid + legacy
+
+    # 有试炼痕迹（无论过期、损坏）就留下卸载不掉的“已用过”标记。
+    if (present or copies) and not _trial_used_present():
+        _mark_trial_used()
+
     if invalid:
         return "tampered", 0, torn
 
-    copies = valid + legacy
     now = int(time.time())
 
     if not copies:
@@ -481,6 +555,7 @@ def trial_status(update: bool = True) -> tuple[str, int, str]:
             return "tampered", 0, torn
         # 试炼记录被清空，但神社的香火账上还有痕迹：说明之前用过，不能再领试炼
         if _used_before():
+            _mark_trial_used()
             return "expired", 0, "试炼的记录被抹干净了，可神社的香火账上还留着你的名字"
         # 没有试炼记录、也没有用过的痕迹（新机器）→ 当作全新用户
         return "fresh", 0, "尚未开启试炼"
@@ -520,5 +595,6 @@ def check_access(update: bool = True) -> tuple[str, str, int]:
 def start_trial() -> tuple[str, int, str]:
     """用户点了「先试用三天」后再真正开始计时。"""
     now = int(time.time())
+    _mark_trial_used()
     _write_trial(now, now, 1)
     return "trial", TRIAL_DAYS, f"试炼开始了，结界还能撑 {TRIAL_DAYS} 天"

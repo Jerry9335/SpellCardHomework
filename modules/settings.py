@@ -12,7 +12,7 @@ import time
 
 APP_DIRNAME = "SpellCardHomework"
 APP_TITLE = "符卡作业簿"
-APP_VERSION = "1.1.7"
+APP_VERSION = "1.1.7-hotfix"
 
 
 def config_dir() -> str:

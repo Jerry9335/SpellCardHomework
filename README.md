@@ -7,7 +7,7 @@
   <img src="https://img.shields.io/badge/windows-0078D6?logo=windows&amp;logoColor=white" alt="Windows 10 / 11" />
   <img src="https://img.shields.io/badge/Python-14354C.svg?logo=python&amp;logoColor=white" alt="Python 3.10+" />
   <img src="https://img.shields.io/badge/License-MIT-e8c46a.svg" alt="MIT License" />
-  <img src="https://img.shields.io/badge/version-1.1.7-c8323c.svg" alt="v1.1.7" />
+  <img src="https://img.shields.io/badge/version-1.1.7--hotfix-c8323c.svg" alt="v1.1.7-hotfix" />
   <img src="https://img.shields.io/badge/Touhou-Project%20Fan%20Work-c8323c.svg" alt="Touhou Project fan work" />
   <img src="https://img.shields.io/badge/QQ-EB1923?logo=tencent-qq&amp;logoColor=white" alt="QQ" />
   <img src="https://img.shields.io/badge/Gmail-D14836?logo=gmail&amp;logoColor=white" alt="Gmail" />
@@ -64,7 +64,7 @@ Windows 桌面小工具：**截屏识题 → 英文翻译 → AI 作答 → 全�
 
 | 文件 | 说明 |
 | --- | --- |
-| `SpellCardHomework-Setup-1.1.7.exe` | 常规安装包（Inno Setup） |
+| `SpellCardHomework-Setup-1.1.7-hotfix.exe` | 常规安装包（Inno Setup） |
 
 ### 方式二：源码运行
 
@@ -148,6 +148,13 @@ docs/                  截图与文档
 
 > 这里只列出实际发布到 GitHub / Gitee Releases 的版本；未发布构建不再混入正式记录。
 
+### v1.1.7-hotfix（2026-11-28，热修复，待发布）
+
+- **升级不再重走契约/引路**：安装器只在旧 exe 不存在时写一次性 `onboarding_request.json`；覆盖升级保留已完成状态。
+- **试用防重置**：在卸载器不会删除的 ProgramData / `.keep` / 独立注册表项写入 `trial_used`；删掉 trial 文件再重装不再发放新的 3 天试用。
+- **配置持久化修复**：`onboarding_reinstall`、`onboarding_tour_skipped`、`whats_new_seen_version` 加入配置白名单。
+- **更新界面恢复**：让文文去取 / 打开号外页 / 晚点再说 / 封笔到…，以及每次启动检查和小时级定时检查。
+
 ### v1.1.7（2026-11-28，正式版）
 
 - **自动答题修复**：多小问全部做完才离开当前题目；失败停在原题；第 2 小问起补全整题条件；要求不化简时保留原分数；∞ 改走公式调色板；多路截断时追加单路非流式兜底；B6-Chapter 11.1 实测 20/20、作业得分 100%
@@ -212,10 +219,10 @@ Remove-ItemProperty "HKCU:\Software\Shinichi\SpellCardHomework" -Name trial -Err
 ```
 
 **Q：首次启动直接进了主界面？**
-先确认「关于程序」里版本是 **v1.1.7**，再看 `%APPDATA%\SpellCardHomework\boot.log` 里的 `access=` 记录。
+先确认「关于程序」里版本是 **v1.1.7-hotfix**，再看 `%APPDATA%\SpellCardHomework\boot.log` 里的 `access=` 记录。
 
 **Q：激活码太长？**
-v1.1.7 的激活码约 130 字符，整段复制粘贴即可。
+v1.1.7-hotfix 的激活码约 130 字符，整段复制粘贴即可。
 
 ## 开源协议与素材说明
 

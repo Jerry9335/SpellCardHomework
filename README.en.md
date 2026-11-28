@@ -7,7 +7,7 @@
   <img src="https://img.shields.io/badge/windows-0078D6?logo=windows&amp;logoColor=white" alt="Windows 10 / 11" />
   <img src="https://img.shields.io/badge/Python-14354C.svg?logo=python&amp;logoColor=white" alt="Python 3.10+" />
   <img src="https://img.shields.io/badge/License-MIT-e8c46a.svg" alt="MIT License" />
-  <img src="https://img.shields.io/badge/version-1.1.7-c8323c.svg" alt="v1.1.7" />
+  <img src="https://img.shields.io/badge/version-1.1.7--hotfix-c8323c.svg" alt="v1.1.7-hotfix" />
   <img src="https://img.shields.io/badge/Touhou-Project%20Fan%20Work-c8323c.svg" alt="Touhou Project fan work" />
   <img src="https://img.shields.io/badge/QQ-EB1923?logo=tencent-qq&amp;logoColor=white" alt="QQ" />
   <img src="https://img.shields.io/badge/Gmail-D14836?logo=gmail&amp;logoColor=white" alt="Gmail" />
@@ -64,7 +64,7 @@ Download from [Releases](../../releases):
 
 | File | Description |
 | --- | --- |
-| `SpellCardHomework-Setup-1.1.7.exe` | Standard installer (Inno Setup) |
+| `SpellCardHomework-Setup-1.1.7-hotfix.exe` | Standard installer (Inno Setup) |
 
 ### Option 2: Run from source
 
@@ -148,6 +148,13 @@ docs/                  screenshots and docs
 
 > Only versions actually published on GitHub / Gitee Releases are listed here. Unreleased builds are no longer mixed into this log.
 
+### v1.1.7-hotfix (2026-11-28, hotfix, pending release)
+
+- **Upgrade no longer resets onboarding**: the installer writes a one-shot `onboarding_request.json` only when the old exe is absent; overwrite upgrades preserve `done`.
+- **Trial anti-reset**: a `trial_used` marker is stored outside the uninstaller-deleted folders (ProgramData / `.keep` / a separate registry key); removing trial files and reinstalling no longer grants a new 3-day trial.
+- **Persistence fix**: `onboarding_reinstall`, `onboarding_tour_skipped` and `whats_new_seen_version` are now in the settings whitelist.
+- **Update UI**: direct download, release page, later and snooze entries are restored; startup check plus hourly runtime check are back.
+
 ### v1.1.7 (2026-11-28, stable)
 
 - **Auto-answer fixes**: finish every sub-question before leaving a question; stay on the current question after a failure; include the full question context from Part 2; keep the original fraction when simplification is forbidden; insert the real ∞ via the math palette; fall back to a single non-stream request when multi-stream sampling is truncated; B6-Chapter 11.1 verified at 20/20 and 100% homework score
@@ -211,10 +218,10 @@ Remove-ItemProperty "HKCU:\Software\Shinichi\SpellCardHomework" -Name trial -Err
 ```
 
 **Q: The first launch went straight to the main window.**
-Check that About shows **v1.1.7**, then look at the `access=` lines in `%APPDATA%\SpellCardHomework\boot.log`.
+Check that About shows **v1.1.7-hotfix**, then look at the `access=` lines in `%APPDATA%\SpellCardHomework\boot.log`.
 
 **Q: The activation code is very long.**
-v1.1.7 codes are about 130 characters — paste the whole string.
+v1.1.7-hotfix codes are about 130 characters — paste the whole string.
 
 ## License and assets
 
