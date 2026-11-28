@@ -151,7 +151,7 @@ docs/                  截图与文档
 ### v1.1.7-hotfix（2026-11-28，热修复）
 
 - **升级不再重走契约/引路**：安装器只在旧 exe 不存在时写一次性 `onboarding_request.json`；覆盖升级保留已完成状态。
-- **试用防重置**：在卸载器不会删除的 ProgramData / `.keep` / 独立注册表项写入 `trial_used`；删掉 trial 文件再重装不再发放新的 3 天试用。
+- **试用防重置**：试用到期后卸载重装不再发放新试用。
 - **配置持久化修复**：`onboarding_reinstall`、`onboarding_tour_skipped`、`whats_new_seen_version` 加入配置白名单。
 - **更新界面恢复**：让文文去取 / 打开号外页 / 晚点再说 / 封笔到…，以及每次启动检查和小时级定时检查。
 
