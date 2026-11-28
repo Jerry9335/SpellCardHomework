@@ -148,7 +148,7 @@ docs/                  screenshots and docs
 
 > Only versions actually published on GitHub / Gitee Releases are listed here. Unreleased builds are no longer mixed into this log.
 
-### v1.1.7-hotfix (2026-11-28, hotfix, pending release)
+### v1.1.7-hotfix (2026-11-28, hotfix)
 
 - **Upgrade no longer resets onboarding**: the installer writes a one-shot `onboarding_request.json` only when the old exe is absent; overwrite upgrades preserve `done`.
 - **Trial anti-reset**: a `trial_used` marker is stored outside the uninstaller-deleted folders (ProgramData / `.keep` / a separate registry key); removing trial files and reinstalling no longer grants a new 3-day trial.
