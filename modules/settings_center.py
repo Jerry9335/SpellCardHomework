@@ -109,6 +109,12 @@ class SettingsCenter(tk.Toplevel):
         self.v_quiet_start = tk.IntVar(value=int(a.toast_quiet_start_var.get()))
         self.v_quiet_end = tk.IntVar(value=int(a.toast_quiet_end_var.get()))
         self.v_channel = tk.StringVar(value=a.update_channel_var.get())
+        self.v_update_enabled = tk.BooleanVar(value=bool(a.update_enabled_var.get()))
+        self.v_update_interval = tk.StringVar(value=a.update_interval_var.get())
+        self.v_update_custom = tk.IntVar(value=int(a.update_custom_var.get() or 5))
+        self.v_update_threads = tk.IntVar(value=int(a.update_max_threads_var.get() or 8))
+        self.v_update_snooze = tk.StringVar(value="未封笔")
+        a._snooze_var = self.v_update_snooze
         self.v_balance = tk.StringVar(value="灵梦：想查香火钱，就点下面的按钮。")
         self.v_conn = tk.StringVar(value="慧音：契约填好后，可以试探一下式神。")
 
@@ -121,6 +127,8 @@ class SettingsCenter(tk.Toplevel):
             self.v_start_url, self.v_theme, self.v_toast, self.v_toast_update,
             self.v_toast_trial, self.v_toast_balance, self.v_toast_auto,
             self.v_quiet_start, self.v_quiet_end, self.v_channel,
+            self.v_update_enabled, self.v_update_interval,
+            self.v_update_custom, self.v_update_threads,
         ]
 
     # --------------------------------------------------------------- window
@@ -600,11 +608,41 @@ class SettingsCenter(tk.Toplevel):
         self._add_row(g2, 0, "引路", "新手引导", row,
                       "契约没配好可在左侧补；引路随时可重看，不会清空配置")
 
-        g3 = self._card(body, "文文的号外", "更新渠道与检查")
-        self._add_row(g3, 0, "报信路线", "更新渠道",
+        g3 = self._card(body, "文文的号外", "自动打听、封笔与下载分片")
+        auto_row = tk.Frame(g3, bg=C["panel"])
+        ttk.Checkbutton(auto_row, text="让文文定期去打听新版本",
+                        variable=self.v_update_enabled).pack(side="left")
+        self._add_row(g3, 0, "自动打听", "定时检查", auto_row, "关掉就完全手动")
+
+        self._add_row(g3, 1, "报信路线", "更新渠道",
                       self._combo(g3, self.v_channel,
                                   list(self.app.CHANNEL_LABELS.values()), width=22),
                       "Gitee 国内快，GitHub 是主仓库")
+
+        int_row = tk.Frame(g3, bg=C["panel"])
+        self._combo(int_row, self.v_update_interval,
+                    list(self.app.INTERVAL_LABELS.values()) + ["自定义"],
+                    width=12).pack(side="left")
+        self._spin(int_row, self.v_update_custom, 1, 720, 1, 6).pack(
+            side="left", padx=(8, 0))
+        tk.Label(int_row, text="小时", bg=C["panel"], fg=C["muted"],
+                 font=(self.F_UI, 9)).pack(side="left", padx=(5, 0))
+        self._add_row(g3, 2, "报信间隔", "检查间隔", int_row,
+                      "选“自定义”时用右边的数字")
+
+        snooze_row = tk.Frame(g3, bg=C["panel"])
+        tk.Label(snooze_row, textvariable=self.v_update_snooze, bg=C["panel"],
+                 fg=C["muted"], font=(self.F_UI, 9)).pack(side="left")
+        self._button(snooze_row, "选日子", self.app._pick_snooze,
+                     small=True).pack(side="left", padx=(10, 0))
+        self._button(snooze_row, "歇 3 天", lambda: self.app._snooze_days(3),
+                     small=True).pack(side="left", padx=(6, 0))
+        self._button(snooze_row, "歇 7 天", lambda: self.app._snooze_days(7),
+                     small=True).pack(side="left", padx=(6, 0))
+        self.app._refresh_update_labels()
+        self._add_row(g3, 3, "封笔到", "暂停自动打听", snooze_row,
+                      "只停自动检查；手动“立即打听”不受影响")
+
         self.update_last_var = tk.StringVar()
         self.app._update_last_var = self.update_last_var
         try:
@@ -616,7 +654,14 @@ class SettingsCenter(tk.Toplevel):
                  fg=C["muted"], font=(self.F_UI, 8)).pack(side="left")
         self._button(row, "立即打听", lambda: self.app._check_updates(manual=True),
                      small=True).pack(side="left", padx=(10, 0))
-        self._add_row(g3, 1, "上次打听", "最近检查", row, "启动时只查一次，只提示不自动装")
+        self._add_row(g3, 4, "上次打听", "最近检查", row, "启动时只查一次，只提示不自动装")
+
+        thread_row = tk.Frame(g3, bg=C["panel"])
+        self._spin(thread_row, self.v_update_threads, 1, 32, 1, 6).pack(side="left")
+        tk.Label(thread_row, text="个线程", bg=C["panel"], fg=C["muted"],
+                 font=(self.F_UI, 9)).pack(side="left", padx=(5, 0))
+        self._add_row(g3, 5, "最多分片", "下载线程", thread_row,
+                      "1–32；服务器不支持 Range 时自动降为 1")
 
         g4 = self._card(body, "关于", "版本、许可与项目链接")
         self._add_row(g4, 0, "版本", "当前版本",
@@ -885,6 +930,16 @@ class SettingsCenter(tk.Toplevel):
         a.continue_wrong_var.set(bool(self.v_continue.get()))
         a.start_url_var.set(self.v_start_url.get().strip() or "https://kysu.edu")
         a.update_channel_var.set(self.v_channel.get())
+        a.update_enabled_var.set(bool(self.v_update_enabled.get()))
+        a.update_interval_var.set(self.v_update_interval.get())
+        try:
+            a.update_custom_var.set(max(1, min(720, int(self.v_update_custom.get()))))
+        except Exception:
+            a.update_custom_var.set(5)
+        try:
+            a.update_max_threads_var.set(max(1, min(32, int(self.v_update_threads.get()))))
+        except Exception:
+            a.update_max_threads_var.set(8)
         a.toast_enabled_var.set(bool(self.v_toast.get()))
         a.toast_update_var.set(bool(self.v_toast_update.get()))
         a.toast_trial_var.set(bool(self.v_toast_trial.get()))
@@ -968,7 +1023,8 @@ class SettingsCenter(tk.Toplevel):
             if getattr(a, "_settings_win", None) is self:
                 a._settings_win = None
             for name in ("_dlg_model_box", "_dlg_vision_box", "_dlg_model_var",
-                         "_dlg_key_var", "_dlg_base_var", "_update_last_var"):
+                         "_dlg_key_var", "_dlg_base_var", "_update_last_var",
+                         "_snooze_var"):
                 try:
                     setattr(a, name, None)
                 except Exception:

@@ -2244,7 +2244,7 @@ class App:
         ).start()
 
     def _schedule_update_check(self, first_launch: bool = False) -> None:
-        """每次启动只检查一次；首次安装/首启流程中完全不检查。"""
+        """首启跳过；之后按“自动打听 / 间隔 / 封笔”决定是否检查。"""
         self._first_launch_run = bool(first_launch)
         self._suppress_update_this_run = bool(first_launch)
         if first_launch:
@@ -2252,6 +2252,17 @@ class App:
             return
         if self._update_startup_scheduled:
             return
+        if not self.update_enabled_var.get():
+            _boot_log("update: automatic check disabled")
+            return
+        try:
+            from modules import update as _up
+
+            if not _up.due(self.cfg):
+                _boot_log("update: not due (interval/snooze)")
+                return
+        except Exception:
+            pass
         self._update_startup_scheduled = True
         # 等主界面稳定、首启窗口判定完成后再打听一次。
         self.root.after(2500, self._update_check_startup)
@@ -2259,6 +2270,15 @@ class App:
     def _update_check_startup(self) -> None:
         if self._suppress_update_this_run or self._update_checking:
             return
+        if not self.update_enabled_var.get():
+            return
+        try:
+            from modules import update as _up
+
+            if not _up.due(self.cfg):
+                return
+        except Exception:
+            pass
         self._check_updates(manual=False)
 
     def _check_updates(self, manual: bool = False) -> None:
@@ -2393,35 +2413,44 @@ class App:
             win.destroy()
             self._open_update_download(info)
 
+        def snooze_dialog() -> None:
+            win.destroy()
+            self._pick_snooze()
+
         if has_installer:
-            tk.Button(row, text="下载安装包", command=open_download,
+            tk.Button(row, text="让文文去取", command=open_download,
                       bg=C["accent"], fg="white",
                       relief="flat", bd=0, padx=16, pady=5, cursor="hand2",
                       font=(self.F_UI, 10, "bold")).pack(side="left")
-            tk.Button(row, text="前往发布页", command=open_release, bg=C["panel2"],
+            tk.Button(row, text="打开号外页", command=open_release, bg=C["panel2"],
                       fg=C["text"], relief="flat", bd=0, padx=12, pady=5,
                       cursor="hand2", font=(self.F_UI, 10)).pack(side="left", padx=(8, 0))
         else:
-            tk.Button(row, text="前往发布页", command=open_release, bg=C["accent"], fg="white",
+            tk.Button(row, text="打开号外页", command=open_release, bg=C["accent"], fg="white",
                       relief="flat", bd=0, padx=16, pady=5, cursor="hand2",
                       font=(self.F_UI, 10, "bold")).pack(side="left")
-        tk.Button(row, text="复制链接", command=copy_link, bg=C["panel2"],
-                  fg=C["text"], relief="flat", bd=0, padx=12, pady=5,
-                  cursor="hand2", font=(self.F_UI, 10)).pack(side="left", padx=(8, 0))
-        tk.Button(row, text="稍后再说", command=win.destroy, bg=C["panel2"], fg=C["muted"],
+        tk.Button(row, text="晚点再说", command=win.destroy, bg=C["panel2"], fg=C["muted"],
                   relief="flat", bd=0, padx=14, pady=5, cursor="hand2",
                   font=(self.F_UI, 10)).pack(side="left", padx=(10, 0))
+        tk.Button(row, text="封笔到…", command=snooze_dialog, bg=C["panel2"], fg=C["text"],
+                  relief="flat", bd=0, padx=14, pady=5, cursor="hand2",
+                  font=(self.F_UI, 10)).pack(side="left", padx=(8, 0))
 
         self._update_hint_var = tk.StringVar(
             value=("下载后会自动校验 SHA256，再由更新助手安装；也可以直接去发布页。"
                    if has_installer else
-                   "本期没有直接安装包地址，请前往发布页下载。"))
+                   "本期没有直接安装包地址，请打开号外页下载。"))
         tk.Label(win, textvariable=self._update_hint_var,
                  bg=C["bg"], fg=C["muted"], font=(self.F_UI, 9)).pack(pady=(0, 10))
         win.protocol("WM_DELETE_WINDOW", win.destroy)
 
     def _open_update_download(self, info: dict) -> None:
         """号外下载窗口：多线程、断点续传、SHA256，完成后交给更新助手。"""
+        info = dict(info or {})
+        try:
+            info["max_threads"] = max(1, min(32, int(self.update_max_threads_var.get() or 8)))
+        except Exception:
+            info["max_threads"] = 8
         win = getattr(self, "_update_download_win", None)
         try:
             if win is not None and win.win.winfo_exists():
